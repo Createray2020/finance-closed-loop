@@ -1,9 +1,12 @@
 import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
+import { drizzle, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import * as schema from './schema';
 
-// Neon HTTP driver（443，非 pg 5432——沙箱/serverless 相容）。
-// 單次 round-trip、不支援多語句 transaction；日後需 transaction 再改 neon-serverless Pool。
-const sql = neon(process.env.DATABASE_URL!);
-export const db = drizzle(sql, { schema });
+// 延遲初始化：模組載入時不連線（build 不需 DATABASE_URL）；第一次查詢才建 client。
+// Neon HTTP driver（443）：單次 round-trip、不支援多語句 transaction。
+let _db: NeonHttpDatabase<typeof schema> | null = null;
+export function getDb() {
+  if (!_db) _db = drizzle(neon(process.env.DATABASE_URL!), { schema });
+  return _db;
+}
 export { schema };

@@ -6,7 +6,18 @@ import {
   date,
   timestamp,
   serial,
+  jsonb,
 } from 'drizzle-orm/pg-core';
+
+/**
+ * app_state：每個使用者一份完整 app 狀態（JSON）。
+ * v1 持久化用此單表沿用已驗證的前端邏輯；日後要正規化查詢再拆成上面的分表。
+ */
+export const appState = pgTable('app_state', {
+  userId: text('user_id').primaryKey(),
+  data: jsonb('data').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 /**
  * 個人財務閉環系統 — 資料綱要（Drizzle + Neon）

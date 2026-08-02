@@ -278,7 +278,7 @@ const fmt=n=>(n<0?'-':'')+'NT$'+Math.abs(Math.round(n)).toLocaleString('en-US');
 const fmtK=n=>'NT$'+Math.round(n).toLocaleString('en-US');
 const WD='日一二三四五六';
 let uid=1;
-const state={
+let state={
   scope:'all',safetyMode:'auto',safetyManual:45000,
   ledgers:[{id:'personal',name:'個人',type:'personal'}],
   accounts:[],
@@ -503,8 +503,8 @@ function renderProject(){
   }).join('')||'<div class="card"><div class="empty">此範圍尚無專案，於上方新增。</div></div>';
 }
 function addProject(){const led=document.getElementById('pjLedger').value,name=document.getElementById('pjName').value.trim(),goal=document.getElementById('pjGoal').value.trim(),exp=parseFloat(document.getElementById('pjExp').value)||0,due=document.getElementById('pjDue').value;if(!name){flash('填專案名稱');return;}const id='P'+(uid++);state.projects.push({id,ledger:led,name,goal:goal||'（未填）',expected:exp,start:iso(TODAY),due:due||iso(addDays(TODAY,30)),phase:'籌備'});document.getElementById('pjName').value='';document.getElementById('pjGoal').value='';document.getElementById('pjExp').value='';flash('已新增專案');refresh();}
-function addTodo(pid){const el=document.getElementById('td-'+pid);const t=el.value.trim();if(!t)return;state.todos.push({id:uid++,pid,text:t,done:false});el.value='';renderProject();}
-function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;t.done=!t.done;t.doneDate=t.done?iso(TODAY):null;renderProject();}
+function addTodo(pid){const el=document.getElementById('td-'+pid);const t=el.value.trim();if(!t)return;state.todos.push({id:uid++,pid,text:t,done:false});el.value='';renderProject();scheduleSave();}
+function toggleTodo(id){const t=state.todos.find(x=>x.id===id);if(!t)return;t.done=!t.done;t.doneDate=t.done?iso(TODAY):null;renderProject();scheduleSave();}
 function addMilestone(pid){const p=proj(pid);const n=document.getElementById('ms-n-'+pid).value.trim(),a=parseFloat(document.getElementById('ms-a-'+pid).value),d=document.getElementById('ms-d-'+pid).value;if(!n||!a||!d){flash('填收款節點 名稱/金額/日期');return;}state.incomes.push({id:uid++,ledger:p.ledger,name:n,amount:a,cycle:'once',date:d,kind:'expected',pid});flash('已加收款節點（已進曲線為預期收入）');refresh();}
 
 function renderWif(){const base=series({}),adj=series(state.whatif);drawCurve(document.getElementById('wifCurve'),adj,{base});const b=sMin(base),a=sMin(adj),SL=safetyLine();
@@ -512,8 +512,8 @@ function renderWif(){const base=series({}),adj=series(state.whatif);drawCurve(do
   const rows=[];for(const it of state.items){if(!it.active||!inScope(it.ledger))continue;for(const d of instDates(it,-2)){if(d<=TODAY)continue;const key=it.name+'|'+iso(d);const eff=it.pay.type==='card'?paymentDue(card(it.pay.id),d):d;rows.push({key,name:it.name,comp:it.comp,amount:it.amount,date:eff});}}
   rows.sort((a,b)=>a.date-b.date);
   document.getElementById('wifList').innerHTML=rows.map(e=>{const cur=state.whatif[e.key];return `<div class="wifrow"><span class="wd">${e.date.getMonth()+1}/${e.date.getDate()}</span><span class="wn">${e.name} <span class="pill ${e.comp}">${COMP[e.comp]}</span></span><span class="wa">${fmt(-e.amount)}</span><span style="display:flex;gap:4px"><span class="tg ${cur==='delay'?'on':''}" onclick="setWif('${e.key}','delay')">延30</span><span class="tg cut ${cur==='cut'?'on':''}" onclick="setWif('${e.key}','cut')">砍</span></span></div>`;}).join('')||'<div class="empty">無支出實例</div>';}
-function setWif(k,m){state.whatif[k]=state.whatif[k]===m?undefined:m;if(!state.whatif[k])delete state.whatif[k];renderWif();renderDash();}
-function resetWif(){state.whatif={};renderWif();renderDash();flash('已重設');}
+function setWif(k,m){state.whatif[k]=state.whatif[k]===m?undefined:m;if(!state.whatif[k])delete state.whatif[k];renderWif();renderDash();scheduleSave();}
+function resetWif(){state.whatif={};renderWif();renderDash();flash('已重設');scheduleSave();}
 
 function onSafetyMode(){state.safetyMode=document.getElementById('safetyMode').value;document.getElementById('safetyManual').style.display=state.safetyMode==='manual'?'inline-block':'none';document.getElementById('safetyManual').value=state.safetyManual;refresh();}
 document.getElementById('safetyManual').addEventListener('input',e=>{state.safetyManual=parseFloat(e.target.value)||0;refresh();});
@@ -521,9 +521,22 @@ document.getElementById('itLedger').addEventListener('change',syncItemPay);
 document.getElementById('itCycle').addEventListener('change',e=>{const m=e.target.value==='monthly';document.getElementById('dueDayWrap').style.display=m?'':'none';document.getElementById('onceWrap').style.display=m?'none':'';});
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById('view-'+t.dataset.view).classList.add('on');}));
 
-function refresh(){renderLedgerbar();renderDash();renderDue();renderAccts();populateAcctForms();renderItems();renderIncome();renderProject();renderWif();document.getElementById('liquidTop').textContent=fmt(scopedLiquid());}
+function refresh(){renderLedgerbar();renderDash();renderDue();renderAccts();populateAcctForms();renderItems();renderIncome();renderProject();renderWif();document.getElementById('liquidTop').textContent=fmt(scopedLiquid());scheduleSave();}
 function flash(m){const f=document.getElementById('flash');f.textContent=m;f.classList.add('show');setTimeout(()=>f.classList.remove('show'),1500);}
-renderLedgerSelects();renderChips();refresh();
+// ---- 雲端持久化：每個使用者一份 app 狀態存 Neon（登入帳號 scope）----
+let _loaded=false,_saveTimer=null;
+function setSync(t){const el=document.getElementById('syncTag');if(el)el.textContent=t;}
+async function loadState(){try{const r=await fetch('/api/state',{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&j.data){const d=j.data;if(typeof d._uid==='number'){uid=d._uid;delete d._uid;}state=d;}}}catch(e){console.warn('load state failed',e);}}
+async function saveState(){if(!_loaded)return;try{const payload=JSON.parse(JSON.stringify(state));payload._uid=uid;const r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});setSync(r.ok?'✓ 已同步':'⚠ 未存');}catch(e){setSync('⚠ 離線');}}
+function scheduleSave(){if(!_loaded)return;setSync('儲存中…');clearTimeout(_saveTimer);_saveTimer=setTimeout(saveState,800);}
+(async()=>{
+  const st=document.createElement('div');st.id='syncTag';st.textContent='載入中…';
+  st.style.cssText='position:fixed;bottom:8px;right:10px;font-size:10.5px;color:var(--ink3);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 9px;z-index:120';
+  document.body.appendChild(st);
+  await loadState();
+  _loaded=true;
+  renderLedgerSelects();renderChips();refresh();
+})();
 </script>
 </body>
 </html>

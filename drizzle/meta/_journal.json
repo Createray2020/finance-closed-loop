@@ -8,6 +8,13 @@
       "when": 1785673009956,
       "tag": "0000_furry_winter_soldier",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785675144951,
+      "tag": "0001_bright_lockjaw",
+      "breakpoints": true
     }
   ]
 }
