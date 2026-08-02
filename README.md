@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 個人財務閉環系統（Personal Finance Closed-Loop）
 
-## Getting Started
+浮動收入者的現金流預測與決策引擎：任一天打開就知道未來 90 天會不會斷鏈、哪天最危險、要爆時砍哪幾筆就安全。定位「預測型」而非「記錄型」。
 
-First, run the development server:
+## 技術棧
+Next.js 16 (App Router) · TypeScript · Tailwind · Neon (Postgres) · Clerk · Vercel · 手機為主 PWA
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 架構：模組化單體
+四個業務模組，各自 `Contract/`（對外）＋ `Internal/`（封閉）：
+
+```
+src/
+  Shared/                 帳本 Ledgers・帳戶/卡 Foundation・Money・db
+  Modules/
+    Expenses/  {Contract, Internal}   支出：項目/展開/記帳/封帳/漏記/可壓縮
+    Income/    {Contract, Internal}   收入：即時/預期＋確認入帳
+    Cashflow/  {Contract, Internal}   現金流：90天曲線/三數字/警示/What-if（純運算）
+    Projects/  {Contract, Internal}   專案：排程/待辦/每月階段性總結＋收款節點連動
+  Application/            組合根：Clerk・DI・API Routes・跨模組聚合
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**帳本(Ledger)是核心維度**：每筆業務資料綁 `ledgerId`；切「全部/單一帳本」在聚合層做，不跨帳本 JOIN。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 邊界防護
+`npm run depcruise` — dependency-cruiser 擋「跨模組 import 別人的 Internal」「Shared 依賴業務模組」「循環依賴」。
+`npm run check` — lint + depcruise + tsc。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 開發
+複製 `.env.example` 成 `.env.local` 填 Neon/Clerk。`npm run dev`。
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+規格見專案資料夾 `spec-財務閉環系統-批次1.md`、架構藍圖 artifact `finance-architecture-batch1`。
