@@ -129,6 +129,20 @@ tr.arrow td{color:var(--muted)}
 .lrow .act{display:flex;gap:4px;align-items:center}
 .lrow.done{opacity:.6}
 .hstat.pos b{color:var(--good)} .hstat.neg b{color:var(--bad)}
+.insgrid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:20px;align-items:start}
+.inspick,.insout{display:grid;gap:10px;min-width:0}
+.insrow{display:grid;grid-template-columns:auto 52px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px;cursor:pointer}
+.insrow input{margin-top:3px;accent-color:var(--accent)}
+.insrow .amt{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.insrow .pe{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.insrow .pe.miss{color:var(--warn)}
+.manrow{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;align-items:end;padding:6px 0;border-bottom:1px dashed var(--line)}
+.manrow input{width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:5px 7px;font-size:13px}
+.ins.wd .remitonly{display:none}
+#insText{width:100%;min-height:320px;border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:12px;font-family:var(--f-body);font-size:13px;line-height:1.7;resize:vertical;color:var(--ink)}
+.payeeedit{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr)) auto;gap:6px;align-items:end;background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:8px}
+.payeeedit input{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:5px 7px;font-size:13px}
+@media (max-width:900px){.insgrid{grid-template-columns:minmax(0,1fr)}}
 .empty{padding:18px 0;color:var(--muted);text-align:center}
 
 /* 水位表 */
@@ -258,6 +272,37 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
     </div>
   </div>
 
+  <section class="panel ins" id="ins">
+    <div class="hd"><h2>匯款／提款指示</h2>
+      <div class="seg" role="group" aria-label="指示類型">
+        <button type="button" data-ins="remit" aria-pressed="true">匯款指示</button>
+        <button type="button" data-ins="withdraw" aria-pressed="false">提款指示</button>
+      </div>
+    </div>
+    <div class="bd">
+      <div class="insgrid">
+        <div class="inspick">
+          <div class="hfilters">
+            <div class="fld"><label for="insFrom" id="insFromLbl">出款帳戶</label><select id="insFrom"></select></div>
+            <div class="fld"><label for="insDate">辦理日期</label><input id="insDate" type="date"></div>
+          </div>
+          <div class="subhd"><span>勾選要處理的款項（逾期＋未來 30 天）</span><button class="undo" type="button" id="insClear">全部取消</button></div>
+          <div id="insList"></div>
+          <div class="subhd"><span>不在清單裡的，手動加</span></div>
+          <div id="insManual"></div>
+          <button class="ghost small" type="button" id="insAdd" style="justify-self:start">＋ 手動加一筆</button>
+          <details><summary class="small muted" style="cursor:pointer" id="pbSum">常用收款帳戶</summary><div id="pbList"></div>
+            <div class="small muted" style="padding-top:6px">款項設定裡填過的收款資訊會自動存進來；手動加的那筆可以按「存成常用」。</div></details>
+        </div>
+        <div class="insout">
+          <div class="subhd"><span>指示文案</span><span id="insTotal" class="num"></span></div>
+          <textarea id="insText" readonly rows="16" aria-label="指示文案"></textarea>
+          <button class="primary" type="button" id="insCopy">複製文案</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="panel level">
     <div class="hd"><h2>資金水位</h2><span class="small muted" id="levelHint"></span></div>
     <div class="bd"><div class="tbl"><table id="levelTbl"></table></div></div>
@@ -302,6 +347,10 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
         <div class="fld" id="fCloseWrap" hidden><label for="fClose">結帳日（每月幾號）</label><input id="fClose" type="number" min="1" max="31" value="25"></div>
         <div class="fld"><label for="fAmt" id="fAmtLbl">金額</label><input id="fAmt" type="number" min="1" step="1" required></div>
         <div class="fld"><label for="fMethod">付款方式</label><select id="fMethod"></select></div>
+        <div class="fld"><label for="fPick">常用收款帳戶</label><select id="fPick"></select></div>
+        <div class="fld"><label for="fPBank">收款銀行（可空白）</label><input id="fPBank" placeholder="例：國泰世華 中壢分行"></div>
+        <div class="fld"><label for="fPName">收款戶名（可空白）</label><input id="fPName" placeholder="例：王小明"></div>
+        <div class="fld"><label for="fPAcct">收款帳號（可空白）</label><input id="fPAcct" inputmode="numeric" placeholder="例：699517273949"></div>
         <div class="fld"><button class="primary" type="submit">加入款項</button></div>
       </form>
       <div class="setlist">
@@ -504,6 +553,8 @@ function render(){
     <form data-amtform="${o.key}"><input type="number" min="0" step="1" id="amt-${o.key.replace('|','-')}" placeholder="本期帳單金額" aria-label="${esc(o.item.title)} ${md(o.due)} 帳單金額"><button class="primary" type="submit">確認金額</button></form></div>`).join('');
   renderHistory();
   renderLedger();
+  renderPayeeBook();
+  renderIns();
   // 款項設定
   const sel=document.getElementById('fMethod'), cur=sel.value;
   sel.innerHTML=S.accounts.map(a=>`<option value="${a.id}">${esc(methodLabel(a.id))}</option>`).join('');
@@ -512,7 +563,13 @@ function render(){
   const once=S.items.filter(i=>i.kind==='once'&&!S.paid[i.id+'|'+i.date]).sort((a,b)=>a.date<b.date?-1:1);
   set('recTotal','每月 '+money(rec.reduce((t,i)=>t+i.amount,0)));
   set('onceTotal',money(once.reduce((t,i)=>t+i.amount,0)));
-  const sRow=(i,lbl)=>`<div class="setrow"><span class="num">${lbl}</span><div style="min-width:0"><div>${esc(i.title)}</div><div class="small muted">${esc(methodLabel(i.method))}</div></div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}</span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button></div>`;
+  const sRow=(i,lbl)=>`<div class="setrow"><span class="num">${lbl}</span><div style="min-width:0"><div>${esc(i.title)}</div><div class="small muted">${esc(methodLabel(i.method))}</div>
+    <div class="small ${payeeStr(i.payee)?'muted':''}">${payeeStr(i.payee)?'收款：'+esc(payeeStr(i.payee)):''} <button class="undo" type="button" data-pedit="${i.id}">${payeeStr(i.payee)?'改收款資訊':'加收款資訊'}</button></div></div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}</span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button>${pEdit===i.id?`<div class="payeeedit">
+      <div class="fld"><label for="pePick">常用收款帳戶</label><select id="pePick">${payeeOpts()}</select></div>
+      <div class="fld"><label for="peBank">收款銀行</label><input id="peBank" value="${esc(i.payee?.bank||'')}"></div>
+      <div class="fld"><label for="peName">收款戶名</label><input id="peName" value="${esc(i.payee?.name||'')}"></div>
+      <div class="fld"><label for="peAcct">收款帳號</label><input id="peAcct" value="${esc(i.payee?.acct||'')}"></div>
+      <div class="btns" style="display:flex;gap:6px"><button class="ghost" type="button" data-pecancel="1">取消</button><button class="primary" type="button" data-pesave="${i.id}">儲存</button></div></div>`:''}</div>`;
   document.getElementById('recList').innerHTML=rec.map(i=>sRow(i,`每月 ${i.day} 號`+(i.variable?`<div class="small muted">結帳 ${i.closeDay} 號</div>`:''))).join('')||'<div class="empty">尚無</div>';
   document.getElementById('onceList').innerHTML=once.map(i=>sRow(i,md(i.date))).join('')||'<div class="empty">尚無</div>';
 }
@@ -591,6 +648,88 @@ function renderLedger(){
   ldgDone.innerHTML=done.map(ldgRow).join('');
 }
 
+// 匯款／提款指示
+let insMode='remit', insSel=new Set(), insManual=[], pEdit=null;
+const payeeStr=p=>p?[p.bank,p.name,p.acct].filter(Boolean).join('・'):'';
+// 常用收款帳戶：存過的收款資訊，之後可以直接選
+function rememberPayee(p){
+  if(!p||!p.acct) return; S.payees=S.payees||[];
+  const ex=S.payees.find(x=>x.acct===p.acct&&x.bank===p.bank);
+  if(ex){if(p.name) ex.name=p.name; return}
+  S.payees.push({id:'p'+uid(),bank:p.bank||'',name:p.name||'',acct:p.acct});
+}
+const payeeOpts=()=>'<option value="">從常用收款帳戶帶入…</option>'+(S.payees||[]).map(x=>`<option value="${x.id}">${esc(payeeStr(x))}</option>`).join('');
+function renderPayeeBook(){
+  const L=S.payees||[]; set('pbSum',`常用收款帳戶（${L.length}）`);
+  pbList.innerHTML=L.map(x=>`<div class="setrow" style="grid-template-columns:minmax(0,1fr) 26px"><span>${esc(payeeStr(x))}</span><button class="x" type="button" data-pbdel="${x.id}" aria-label="刪除這個收款帳戶">×</button></div>`).join('')||'<div class="empty">還沒有存過收款帳戶</div>';
+  const el=document.getElementById('fPick'); if(el){const v=el.value; el.innerHTML=payeeOpts(); el.value=v;}
+}
+function insCandidates(){
+  const until=addDays(refDate,30);
+  return occurrences(S,until).concat(ledgerOcc(until)).filter(o=>!S.paid[o.key])
+    .sort((a,b)=>a.due<b.due?-1:a.due>b.due?1:0).map(o=>{
+      const it=o.ledger?null:S.items.find(i=>i.id===o.item.id);
+      const led=o.ledger?(S.ledger||[]).find(e=>e.id===o.ledger):null;
+      return {...o,payee:it?.payee||null,note:led?.note||''};
+    });
+}
+function renderIns(){
+  const box=document.getElementById('ins'); box.classList.toggle('wd',insMode==='withdraw');
+  document.querySelectorAll('[data-ins]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.ins===insMode));
+  set('insFromLbl',insMode==='remit'?'出款帳戶':'提領帳戶');
+  const sel=insFrom, cur=sel.value;
+  const banks=S.accounts.filter(a=>a.type==='bank');
+  sel.innerHTML=banks.map(a=>`<option value="${a.id}">${esc(a.name)}${a.no?' ****'+esc(a.no):''}（餘額 ${money(a.balance)}）</option>`).join('');
+  sel.value=banks.some(a=>a.id===cur)?cur:(banks.find(a=>Number(a.balance)>0)||banks[0]||{}).id||'';
+  if(!insDate.value) insDate.value=realToday;
+  const C=insCandidates(); const keys=new Set(C.map(o=>o.key)); [...insSel].forEach(k=>{if(!keys.has(k)) insSel.delete(k)});
+  insList.innerHTML=C.map(o=>{const pe=payeeStr(o.payee)||o.note;const late=o.due<refDate;
+    return `<label class="insrow"><input type="checkbox" data-isel="${o.key}" ${insSel.has(o.key)?'checked':''}>
+      <span class="num small">${md(o.due)}${late?'<br><span class="chip late">逾期</span>':''}</span>
+      <span style="min-width:0">${esc(o.item.title)}${o.est?' <span class="chip est">預估</span>':''}<div class="pe ${!pe&&insMode==='remit'?'miss':''}">${pe?esc(pe):(insMode==='remit'?'還沒有收款資訊':'')}</div></span>
+      <span class="amt">${money(o.amount)}</span></label>`}).join('')||'<div class="empty">沒有待付款項</div>';
+  insManual_render(); updateInsText();
+}
+function insManual_render(){
+  document.getElementById('insManual').innerHTML=insManual.map((m,i)=>`<div class="manrow">
+    <div class="fld remitonly"><label for="im-p-${i}">常用收款帳戶</label><select id="im-p-${i}" data-impick="${i}">${payeeOpts()}</select></div>
+    <div class="fld"><label for="im-t-${i}">用途</label><input id="im-t-${i}" data-im="${i}" data-f="title" value="${esc(m.title)}" placeholder="例：押金"></div>
+    <div class="fld remitonly"><label for="im-b-${i}">收款銀行</label><input id="im-b-${i}" data-im="${i}" data-f="bank" value="${esc(m.bank)}"></div>
+    <div class="fld remitonly"><label for="im-n-${i}">戶名</label><input id="im-n-${i}" data-im="${i}" data-f="name" value="${esc(m.name)}"></div>
+    <div class="fld remitonly"><label for="im-a-${i}">帳號</label><input id="im-a-${i}" data-im="${i}" data-f="acct" value="${esc(m.acct)}" inputmode="numeric"></div>
+    <div class="fld"><label for="im-m-${i}">金額</label><input id="im-m-${i}" data-im="${i}" data-f="amount" type="number" min="0" step="1" value="${m.amount||''}"></div>
+    <div style="grid-column:1/-1;display:flex;gap:14px;align-items:center"><button class="undo remitonly" type="button" data-imsave="${i}">把這個收款帳戶存成常用</button><button class="undo" type="button" data-imdel="${i}">移除這筆</button></div></div>`).join('');
+}
+function updateInsText(){
+  const C=insCandidates().filter(o=>insSel.has(o.key));
+  const man=insManual.filter(m=>Number(m.amount)>0||m.title);
+  const lines=[...C.map(o=>({title:o.item.title,due:o.due,amount:o.amount,est:o.est,payee:o.payee,note:o.note})),
+               ...man.map(m=>({title:m.title||'（未填用途）',amount:Number(m.amount)||0,payee:{bank:m.bank,name:m.name,acct:m.acct}}))];
+  const total=lines.reduce((t,l)=>t+l.amount,0);
+  set('insTotal',lines.length?`${lines.length} 筆・合計 ${money(total)}`:'');
+  const a=acctById(insFrom.value), d=insDate.value||realToday, nt=n=>'NT$ '+Math.round(n).toLocaleString('zh-TW');
+  if(!lines.length){insText.value='勾選左邊的款項，或手動加一筆，文案會出現在這裡。';return}
+  const acctLine=a?`${a.name}${a.no?' ****'+a.no:''}`:'（請選帳戶）';
+  const bankName=a?a.name.split(/[・ ]/)[0]:'銀行';
+  let t='';
+  if(insMode==='remit'){
+    t+=`【匯款指示】${md(d)}（${wd(d)}）\n\n請至${bankName}臨櫃辦理匯款。\n出款帳戶：${acctLine}\n共 ${lines.length} 筆，合計 ${nt(total)}\n`;
+    lines.forEach((l,i)=>{const p=l.payee||{};
+      t+=`\n${i+1}. ${l.title}${l.due?`（${l.due<d?'已逾期，':''}到期 ${md(l.due)}）`:''}\n`;
+      t+=`   收款銀行：${p.bank||'（未提供，請先跟我確認）'}\n`;
+      t+=`   戶名：${p.name||'（未提供，請先跟我確認）'}\n`;
+      t+=`   帳號：${p.acct||'（未提供，請先跟我確認）'}\n`;
+      if(!p.bank&&!p.acct&&l.note) t+=`   備註：${l.note}\n`;
+      t+=`   金額：${nt(l.amount)}${l.est?'（預估，請先跟我確認實際金額）':''}\n`;});
+    t+=`\n辦理時請注意：\n・每一筆送出前，再核對一次帳號和金額\n・有標「請先跟我確認」的那筆，先不要匯\n・辦完把每張匯款收據拍照回傳給我`;
+  }else{
+    t+=`【提款指示】${md(d)}（${wd(d)}）\n\n請從以下帳戶提領現金：\n提領帳戶：${acctLine}\n提領金額：${nt(total)}\n\n用途：\n`;
+    lines.forEach((l,i)=>{t+=`${i+1}. ${l.title}　${nt(l.amount)}${l.due?`（到期 ${md(l.due)}）`:''}${l.est?'（預估）':''}\n`;});
+    t+=`\n辦理時請注意：\n・${total>=30000?'金額超過 ATM 單日上限時請臨櫃辦理，並帶存摺和印章\n・':''}現場點清金額再離開\n・辦完把提款單或明細拍照回傳給我`;
+  }
+  insText.value=t;
+}
+
 function rowHTML(o,state){
   const it=o.item, late=o.due<refDate;
   let kind=it.kind==='recurring'?`<span class="chip rec">常態・每月 ${it.day} 號</span>`:it.kind==='ap'?'<span class="chip">應付帳款</span>':'<span class="chip once">臨時</span>';
@@ -661,6 +800,19 @@ document.addEventListener('click',e=>{
     S.paid[o.key]={on,source:src,amount:amt,title:o.item.title,kind:o.item.kind};
     if(o.item.variable) S.amounts[o.key]=amt;
     payingKey=null;save();render();toast(`${o.item.title} 已付，${a.type==='cash'?'現金部位':a.name} 扣 ${money(amt)}`);return}
+  if(b.dataset.ins){insMode=b.dataset.ins;renderIns();return}
+  if(b.id==='insClear'){insSel.clear();renderIns();return}
+  if(b.id==='insAdd'){insManual.push({title:'',bank:'',name:'',acct:'',amount:''});insManual_render();updateInsText();return}
+  if(b.dataset.imdel){insManual.splice(Number(b.dataset.imdel),1);insManual_render();updateInsText();return}
+  if(b.id==='insCopy'){const tx=insText.value;
+    (navigator.clipboard?navigator.clipboard.writeText(tx):Promise.reject()).then(()=>toast('已複製文案')).catch(()=>{insText.focus();insText.select();toast('已選取文案，請按複製')});return}
+  if(b.dataset.imsave){const m=insManual[Number(b.dataset.imsave)]; if(!m||!m.acct){toast('請先填收款帳號');return}
+    rememberPayee({bank:m.bank,name:m.name,acct:m.acct});save();renderPayeeBook();insManual_render();toast('已存成常用收款帳戶');return}
+  if(b.dataset.pbdel){S.payees=(S.payees||[]).filter(x=>x.id!==b.dataset.pbdel);save();render();toast('已刪除收款帳戶');return}
+  if(b.dataset.pedit){pEdit=b.dataset.pedit;render();return}
+  if(b.dataset.pecancel){pEdit=null;render();return}
+  if(b.dataset.pesave){const it=S.items.find(i=>i.id===b.dataset.pesave); if(!it) return;
+    it.payee={bank:peBank.value.trim(),name:peName.value.trim(),acct:peAcct.value.trim()};rememberPayee(it.payee);pEdit=null;save();render();toast('已更新收款資訊');return}
   if(b.dataset.lgo){ldgAct=b.dataset.lgo;ldgDel=null;render();const r=document.querySelector(`[data-lok="${b.dataset.lgo}"]`);(r||document.getElementById('ledger')).scrollIntoView({block:'center'});return}
   if(b.dataset.ledate){ldgDateEdit=b.dataset.ledate;render();return}
   if(b.dataset.ldcancel){ldgDateEdit=null;render();return}
@@ -694,7 +846,16 @@ document.addEventListener('click',e=>{
     if(S.items.some(i=>i.method===b.dataset.delacct)){toast('還有款項從這個帳戶付，請先改掉或刪除那些款項');return}
     S.accounts=S.accounts.filter(a=>a.id!==b.dataset.delacct);save();render();toast('已刪除帳戶');return}
 });
+document.addEventListener('input',e=>{
+  const el=e.target; if(el.dataset&&el.dataset.im!==undefined){insManual[Number(el.dataset.im)][el.dataset.f]=el.value;updateInsText();}
+});
 document.addEventListener('change',e=>{
+  const pick=id=>(S.payees||[]).find(x=>x.id===id);
+  if(e.target.id==='fPick'){const x=pick(e.target.value); if(x){fPBank.value=x.bank;fPName.value=x.name;fPAcct.value=x.acct} return}
+  if(e.target.id==='pePick'){const x=pick(e.target.value); if(x){peBank.value=x.bank;peName.value=x.name;peAcct.value=x.acct} return}
+  if(e.target.dataset&&e.target.dataset.impick!==undefined){const i=Number(e.target.dataset.impick),x=pick(e.target.value); if(x){Object.assign(insManual[i],{bank:x.bank,name:x.name,acct:x.acct});insManual_render();updateInsText()} return}
+  if(e.target.dataset&&e.target.dataset.isel){e.target.checked?insSel.add(e.target.dataset.isel):insSel.delete(e.target.dataset.isel);updateInsText();return}
+  if(['insFrom','insDate'].includes(e.target.id)){updateInsText();return}
   if(['hFrom','hTo'].includes(e.target.id)){hRange='';renderHistory();return}
   if(['hSrc','hKind'].includes(e.target.id)){renderHistory();return}
   const el=e.target;
@@ -730,16 +891,17 @@ document.getElementById('itemForm').addEventListener('submit',e=>{
   e.preventDefault();
   const title=fTitle.value.trim(), amount=Number(fAmt.value), method=fMethod.value;
   if(!title||!(amount>0)) return;
+  const payee={bank:fPBank.value.trim(),name:fPName.value.trim(),acct:fPAcct.value.trim()}; rememberPayee(payee);
   if(formKind==='recurring'){
     const day=Math.min(31,Math.max(1,Number(fDay.value)||1));
-    const it={id:'r'+uid(),kind:'recurring',day,title,amount,method,start:realToday};
+    const it={id:'r'+uid(),kind:'recurring',day,title,amount,method,start:realToday,payee};
     if(fVar.value==='1'){it.variable=true;it.closeDay=Math.min(31,Math.max(1,Number(fClose.value)||1))}
     S.items.push(it);
   }else{
     if(!fDate.value){toast('請選付款日期');return}
-    S.items.push({id:'o'+uid(),kind:'once',date:fDate.value,title,amount,method});
+    S.items.push({id:'o'+uid(),kind:'once',date:fDate.value,title,amount,method,payee});
   }
-  fTitle.value='';fAmt.value='';save();render();toast(`已加入「${title}」`);
+  fTitle.value='';fAmt.value='';fPBank.value='';fPName.value='';fPAcct.value='';save();render();toast(`已加入「${title}」`);
 });
 
 document.getElementById('fDate').value=addDays(realToday,3);
@@ -748,7 +910,7 @@ render();
 syncMsg('讀取中…');
 load().then(d=>{
   if(d==='error'||d===null) return;   // 讀不到就不允許存，避免用空白蓋掉雲端資料
-  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.items=S.items||[]; S.accounts=S.accounts||[];
+  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.items=S.items||[]; S.accounts=S.accounts||[];
   _loaded=true; syncMsg('已同步'); render();
 });
 </script>
