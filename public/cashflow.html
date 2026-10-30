@@ -123,6 +123,8 @@ td.late-paid{color:var(--warn)}
 .chip.est{border-style:dashed}
 .lrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13px}
 .lrow b{font-weight:500}
+td.inflow{color:var(--good)}
+tr.arrow td{color:var(--muted)}
 .lrow .amt{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;text-align:right;white-space:nowrap}
 .lrow .act{display:flex;gap:4px;align-items:center}
 .lrow.done{opacity:.6}
@@ -262,7 +264,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
   </section>
 
   <section class="panel" id="ledger">
-    <div class="hd"><h2>應收／應付帳款</h2><span class="small muted">沒有日期，不算進上方缺口</span></div>
+    <div class="hd"><h2>應收／應付帳款</h2><span class="small muted">有日期的應付算進缺口；應收只在資金水位標示</span></div>
     <div class="bd">
       <div class="hstats" id="ldgStats"></div>
       <div class="setlist">
@@ -276,6 +278,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
           <div class="fld"><label for="lParty">對象</label><input id="lParty" required placeholder="例：王小明"></div>
           <div class="fld"><label for="lTitle">事由</label><input id="lTitle" required placeholder="例：10月顧問費"></div>
           <div class="fld"><label for="lAmt">金額</label><input id="lAmt" type="number" min="1" step="1" required></div>
+          <div class="fld"><label for="lDate">預計日期（可空白）</label><input id="lDate" type="date"></div>
           <div class="fld"><label for="lNote">備註（可空白）</label><input id="lNote" placeholder="例：匯款帳號、聯絡方式"></div>
           <div class="fld"><button class="primary" type="submit">加入</button></div>
         </form>
@@ -381,6 +384,11 @@ function occurrences(s,until){
   return out;
 }
 
+// 有日期的應付帳款 → 當成一般待付款項算進缺口（付款走應收／應付區塊）
+function ledgerOcc(until){
+  return (S.ledger||[]).filter(e=>e.type==='ap'&&e.remaining>0&&e.date&&e.date<=until)
+    .map(e=>({key:'L|'+e.id,ledger:e.id,item:{id:e.id,kind:'ap',title:`${e.party}・${e.title}`,method:null},due:e.date,amount:e.remaining}));
+}
 const winDays={day:1,week:7,month:30};
 const winName={day:'今天',week:'未來 7 天',month:'未來 30 天'};
 const acctById=id=>S.accounts.find(a=>a.id===id);
@@ -388,7 +396,7 @@ const methodLabel=id=>{const a=acctById(id); if(!a) return '（帳戶已刪除�
 
 function compute(){
   const end=addDays(refDate,winDays[win]-1);
-  const all=occurrences(S,addDays(refDate,30)).map(o=>({...o,paid:S.paid[o.key]}));
+  const all=occurrences(S,addDays(refDate,30)).concat(ledgerOcc(addDays(refDate,30))).map(o=>({...o,paid:S.paid[o.key]}));
   const overdue=all.filter(o=>!o.paid&&o.due<refDate).sort((a,b)=>a.due<b.due?-1:1);
   const inWin=all.filter(o=>o.due>=refDate&&o.due<=end).sort((a,b)=>a.due<b.due?-1:a.due>b.due?1:0);
   const unpaidWin=inWin.filter(o=>!o.paid);
@@ -414,7 +422,7 @@ function render(){
   const need=C.overSum+C.winSum, gap=need-C.funds;
   // 資金可支付到幾號：逾期先付，再依日期累計，找出第一個付不出來的日子，取前一天
   const HZ=90, horizon=addDays(refDate,HZ-1);
-  const fut=occurrences(S,horizon).filter(o=>!S.paid[o.key]&&o.due>=refDate).sort((a,b)=>a.due<b.due?-1:1);
+  const fut=occurrences(S,horizon).concat(ledgerOcc(horizon)).filter(o=>!S.paid[o.key]&&o.due>=refDate).sort((a,b)=>a.due<b.due?-1:1);
   let run=C.funds-C.overSum, failDay=null, failItems=[], short=0;
   if(run<0){failDay='over';short=-run}
   else{const days={};fut.forEach(o=>(days[o.due]=days[o.due]||[]).push(o));
@@ -449,15 +457,20 @@ function render(){
 
   // 資金水位
   const q=[...C.overdue,...C.unpaidWin];
+  const arL=(S.ledger||[]).filter(e=>e.type==='ar'&&e.remaining>0&&e.date&&e.date<=C.end)
+    .map(e=>({ar:true,due:e.date,amount:e.remaining,item:{title:`${e.party}・${e.title}`}}));
+  const kk=o=>o.due<refDate?'0':'1'+o.due;
+  const rows=[...q,...arL].sort((a,b)=>kk(a)<kk(b)?-1:kk(a)>kk(b)?1:0);
   let bal=C.funds, cum=0, firstNeg=null;
   let t=`<thead><tr><th>日期</th><th>款項</th><th class="r">應付</th><th class="r">累計應付</th><th class="r">剩餘資金</th></tr></thead><tbody>`;
   t+=`<tr><td class="muted">起點</td><td class="muted">現有資金</td><td class="r"></td><td class="r"></td><td class="r bal">${money(bal)}</td></tr>`;
-  q.forEach(o=>{
+  rows.forEach(o=>{
+    if(o.ar){t+=`<tr class="arrow"><td>${o.due<refDate?'<span class="chip late">逾期</span>':md(o.due)}</td><td>${esc(o.item.title)} <span class="chip est">預計入帳・不計入</span></td><td class="r inflow">+${money(o.amount)}</td><td class="r"></td><td class="r muted">—</td></tr>`;return}
     cum+=o.amount; bal-=o.amount;
     const neg=bal<0, fn=neg&&firstNeg===null; if(fn) firstNeg=o;
     t+=`<tr class="${neg?'neg':''} ${fn?'first-neg':''}"><td>${o.due<refDate?'<span class="chip late">逾期</span>':md(o.due)}</td><td>${esc(o.item.title)}${o.est?' <span class="chip est">預估</span>':''}</td><td class="r">${money(o.amount)}</td><td class="r">${money(cum)}</td><td class="r bal">${bal<0?'−'+money(-bal):money(bal)}</td></tr>`;
   });
-  if(!q.length) t+=`<tr><td colspan="5" class="empty">沒有待付款項</td></tr>`;
+  if(!rows.length) t+=`<tr><td colspan="5" class="empty">沒有待付款項</td></tr>`;
   document.getElementById('levelTbl').innerHTML=t+'</tbody>';
   set('levelHint',firstNeg?`付到「${firstNeg.item.title}」${firstNeg.due<refDate?'':'（'+md(firstNeg.due)+'）'}時資金開始不夠`:'範圍內資金都撐得住');
 
@@ -541,10 +554,15 @@ function renderHistory(){
 }
 
 // 應收／應付帳款（沒有日期，不進缺口）
-let ldgAct=null, ldgDel=null;
+let ldgAct=null, ldgDel=null, ldgDateEdit=null;
+const ldgSort=(a,b)=>{const ka=a.date||'9999', kb=b.date||'9999'; return ka<kb?-1:ka>kb?1:0};
 function ldgRow(e){
   const done=e.remaining<=0, isAR=e.type==='ar', moved=e.amount-e.remaining;
   const verb=isAR?'收款':'付款';
+  const lateD=e.date&&!done&&e.date<refDate?diffDays(e.date,refDate):0;
+  const dateChip=e.date?(lateD?`<span class="chip late">預計 ${md(e.date)}・逾期 ${lateD} 天</span>`:`<span class="chip">預計 ${md(e.date)} ${wd(e.date)}</span>`):'<span class="chip">未定日期</span>';
+  const dateEdit=ldgDateEdit===e.id?`<div class="paybox"><div class="payfields"><div class="fld"><label for="ldgDateIn">預計日期（留空＝未定）</label><input id="ldgDateIn" type="date" value="${e.date||''}"></div>
+    <div class="btns"><button class="ghost" type="button" data-ldcancel="1">取消</button><button class="ghost" type="button" data-ldclear="${e.id}">清除日期</button><button class="primary" type="button" data-ldsave="${e.id}">儲存日期</button></div></div></div>`:'';
   const meta=[e.note?esc(e.note):'',`建立 ${md(e.created)}`,moved>0?`原 ${money(e.amount)}，已${isAR?'收':'付'} ${money(moved)}`:''].filter(Boolean).join('・');
   const def=(S.accounts.find(a=>a.type==='bank'&&Number(a.balance)>0)||S.accounts[0]||{}).id;
   const box=ldgAct===e.id&&!done?`<div class="paybox"><div class="ttl">${isAR?'錢收進哪個帳戶？':'從哪裡出帳？'}</div>
@@ -554,9 +572,10 @@ function ldgRow(e){
       <div class="fld"><label for="ldgOn">日期</label><input id="ldgOn" type="date" value="${realToday}"></div>
       <div class="btns"><button class="ghost" type="button" data-lcancel="1">取消</button><button class="primary" type="button" data-lok="${e.id}">確認${verb}</button></div></div></div>`:'';
   const act=done?'<span class="chip">已結清</span>':ldgAct===e.id?'':`<button class="pay" type="button" data-lact="${e.id}">${verb}</button>`;
-  const del=ldgDel===e.id?`<button class="undo" type="button" data-ldel="${e.id}" style="color:var(--bad)">確定刪除</button>`:`<button class="x" type="button" data-ldel="${e.id}" aria-label="刪除 ${esc(e.title)}">×</button>`;
-  return `<div class="lrow ${done?'done':''}"><div style="min-width:0"><b>${esc(e.party)}</b>・${esc(e.title)}${meta?`<div class="small muted">${meta}</div>`:''}</div>
-    <div class="amt">${money(done?e.amount:e.remaining)}</div><div class="act">${act}${del}</div>${box}</div>`;
+  const del=ldgDel===e.id?`<button class="undo" type="button" data-ldel="${e.id}" style="color:var(--bad);font-weight:700">確定刪除，不入帳</button><button class="undo" type="button" data-ldelno="1">取消</button>`
+    :`<button class="ghost small" type="button" data-ldel="${e.id}" aria-label="刪除 ${esc(e.title)}" title="${isAR?'這筆不會收到了，刪除且不入帳':'這筆不用付了，刪除且不出帳'}">刪除</button>`;
+  return `<div class="lrow ${done?'done':''}"><div style="min-width:0"><b>${esc(e.party)}</b>・${esc(e.title)}<div class="meta" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">${done?'':dateChip}${!done?`<button class="undo" type="button" data-ledate="${e.id}">${e.date?'改日期':'設日期'}</button>`:''}</div>${meta?`<div class="small muted">${meta}</div>`:''}</div>
+    <div class="amt">${money(done?e.amount:e.remaining)}</div><div class="act">${act}${del}</div>${box}${dateEdit}</div>`;
 }
 function renderLedger(){
   const L=S.ledger||[], open=t=>L.filter(e=>e.type===t&&e.remaining>0), sum=l=>l.reduce((t,e)=>t+e.remaining,0);
@@ -564,6 +583,7 @@ function renderLedger(){
   ldgStats.innerHTML=`<span class="hstat">應收合計<b>${money(sum(ar))}</b></span><span class="hstat">應付合計<b>${money(sum(ap))}</b></span>
     <span class="hstat ${net<0?'neg':'pos'}">淨部位（現有資金＋應收－應付）<b>${net<0?'−'+money(-net):money(net)}</b></span>`;
   set('ldgARt',money(sum(ar))); set('ldgAPt',money(sum(ap)));
+  ar.sort(ldgSort); ap.sort(ldgSort);
   ldgAR.innerHTML=ar.map(ldgRow).join('')||'<div class="empty">目前沒有應收帳款</div>';
   ldgAP.innerHTML=ap.map(ldgRow).join('')||'<div class="empty">目前沒有應付帳款</div>';
   const done=L.filter(e=>e.remaining<=0);
@@ -573,13 +593,13 @@ function renderLedger(){
 
 function rowHTML(o,state){
   const it=o.item, late=o.due<refDate;
-  let kind=it.kind==='recurring'?`<span class="chip rec">常態・每月 ${it.day} 號</span>`:'<span class="chip once">臨時</span>';
+  let kind=it.kind==='recurring'?`<span class="chip rec">常態・每月 ${it.day} 號</span>`:it.kind==='ap'?'<span class="chip">應付帳款</span>':'<span class="chip once">臨時</span>';
   if(it.variable&&!o.paid) kind+=o.billed?`<span class="chip">帳單金額已輸入</span><button class="undo" type="button" data-reamt="${o.key}">改金額</button>`
     :o.needInput?`<span class="chip warnchip">${md(o.closing)} 已結帳・待輸入金額</span>`:`<span class="chip">${md(o.closing)} 結帳後輸入金額</span>`;
   const srcName=id=>{const a=acctById(id);return a?(a.type==='cash'?'現金部位':a.name):'已刪除帳戶'};
   const st=o.paid?`<span class="chip">已付 ${md(o.paid.on)}・從${esc(srcName(o.paid.source))}出帳${o.paid.amount!==o.amount?'・實付 '+money(o.paid.amount):''}</span>`:late?`<span class="chip late">逾期 ${diffDays(o.due,refDate)} 天</span>`:state==='today'?'<span class="chip today">今天到期</span>':'';
   const open=!o.paid&&payingKey===o.key;
-  const act=o.paid?`<button class="undo" type="button" data-undo="${o.key}">取消已付</button>`:open?'':`<button class="pay" type="button" data-pay="${o.key}">標記已付</button>`;
+  const act=o.ledger?`<button class="pay" type="button" data-lgo="${o.ledger}">去付款</button>`:o.paid?`<button class="undo" type="button" data-undo="${o.key}">取消已付</button>`:open?'':`<button class="pay" type="button" data-pay="${o.key}">標記已付</button>`;
   const box=open?`<div class="paybox"><div class="ttl">從哪裡出帳？預設是款項設定的付款方式，可以改選</div>
     <div class="srcopts">${S.accounts.map(a=>{const after=Number(a.balance)-o.amount;return `<label class="srcopt"><input type="radio" name="paysrc" value="${a.id}" ${a.id===it.method?'checked':''}>
       <span><b>${a.type==='cash'?'現金部位':esc(a.name)}${a.no?` <span class="small muted num">****${esc(a.no)}</span>`:''}</b>
@@ -588,7 +608,7 @@ function rowHTML(o,state){
       <div class="fld"><label for="payOn">出帳日期</label><input id="payOn" type="date" value="${refDate}"></div>
       <div class="btns"><button class="ghost" type="button" data-paycancel="1">取消</button><button class="primary" type="button" data-payok="${o.key}">確認出帳</button></div></div></div>`:'';
   return `<div class="row ${o.paid?'paid':''}"><div class="d">${md(o.due)}<small>${wd(o.due)}</small></div>
-    <div class="t"><b>${esc(it.title)}</b><div class="meta">${kind}<span class="chip">${esc(methodLabel(it.method))}</span>${st}</div></div>
+    <div class="t"><b>${esc(it.title)}</b><div class="meta">${kind}<span class="chip">${o.ledger?'付款時選帳戶':esc(methodLabel(it.method))}</span>${st}</div></div>
     <div class="amt">${money(o.amount)}${o.est?'<div class="small muted" style="font-weight:400">預估</div>':''}</div><div class="act">${act}</div>${box}</div>`;
 }
 
@@ -641,11 +661,17 @@ document.addEventListener('click',e=>{
     S.paid[o.key]={on,source:src,amount:amt,title:o.item.title,kind:o.item.kind};
     if(o.item.variable) S.amounts[o.key]=amt;
     payingKey=null;save();render();toast(`${o.item.title} 已付，${a.type==='cash'?'現金部位':a.name} 扣 ${money(amt)}`);return}
+  if(b.dataset.lgo){ldgAct=b.dataset.lgo;ldgDel=null;render();const r=document.querySelector(`[data-lok="${b.dataset.lgo}"]`);(r||document.getElementById('ledger')).scrollIntoView({block:'center'});return}
+  if(b.dataset.ledate){ldgDateEdit=b.dataset.ledate;render();return}
+  if(b.dataset.ldcancel){ldgDateEdit=null;render();return}
+  if(b.dataset.ldsave||b.dataset.ldclear){const id=b.dataset.ldsave||b.dataset.ldclear;const e=(S.ledger||[]).find(x=>x.id===id); if(!e) return;
+    e.date=b.dataset.ldclear?'':(document.getElementById('ldgDateIn').value||'');ldgDateEdit=null;save();render();toast(e.date?`預計日期設為 ${md(e.date)}`:'已改成未定日期');return}
   if(b.dataset.lact){ldgAct=b.dataset.lact;ldgDel=null;render();return}
   if(b.dataset.lcancel){ldgAct=null;render();return}
+  if(b.dataset.ldelno){ldgDel=null;render();return}
   if(b.dataset.ldel){const id=b.dataset.ldel;
     if(ldgDel!==id){ldgDel=id;render();return}
-    S.ledger=(S.ledger||[]).filter(e=>e.id!==id);ldgDel=null;save();render();toast('已刪除');return}
+    S.ledger=(S.ledger||[]).filter(e=>e.id!==id);ldgDel=null;save();render();toast('已刪除，帳戶餘額沒有變動');return}
   if(b.dataset.lok){
     const e=(S.ledger||[]).find(x=>x.id===b.dataset.lok); if(!e) return;
     const src=(document.querySelector('input[name="ldgsrc"]:checked')||{}).value, a=acctById(src);
@@ -697,8 +723,8 @@ document.getElementById('ldgForm').addEventListener('submit',ev=>{
   const amount=Number(lAmt.value), party=lParty.value.trim(), title=lTitle.value.trim();
   if(!party||!title||!(amount>0)) return;
   S.ledger=S.ledger||[];
-  S.ledger.push({id:'l'+uid(),type:lType.value,party,title,amount,remaining:amount,note:lNote.value.trim(),created:realToday,log:[]});
-  lParty.value='';lTitle.value='';lAmt.value='';lNote.value='';save();render();toast(`已加入${lType.value==='ar'?'應收':'應付'}「${party}・${title}」`);
+  S.ledger.push({id:'l'+uid(),type:lType.value,party,title,amount,remaining:amount,note:lNote.value.trim(),date:lDate.value||'',created:realToday,log:[]});
+  lDate.value='';lParty.value='';lTitle.value='';lAmt.value='';lNote.value='';save();render();toast(`已加入${lType.value==='ar'?'應收':'應付'}「${party}・${title}」`);
 });
 document.getElementById('itemForm').addEventListener('submit',e=>{
   e.preventDefault();
