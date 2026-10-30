@@ -136,6 +136,7 @@ tr.arrow td{color:var(--muted)}
 .insrow .amt{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
 .insrow .pe{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .insrow .pe.miss{color:var(--warn)}
+.inspay{margin-top:6px;width:100%;max-width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:4px 6px;font-size:12px}
 .manrow{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;align-items:end;padding:6px 0;border-bottom:1px dashed var(--line)}
 .manrow input{width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:5px 7px;font-size:13px}
 .ins.wd .remitonly{display:none}
@@ -649,7 +650,7 @@ function renderLedger(){
 }
 
 // 匯款／提款指示
-let insMode='remit', insSel=new Set(), insManual=[], pEdit=null;
+let insMode='remit', insSel=new Set(), insManual=[], pEdit=null, insPayee={};
 const payeeStr=p=>p?[p.bank,p.name,p.acct].filter(Boolean).join('・'):'';
 // 常用收款帳戶：存過的收款資訊，之後可以直接選
 function rememberPayee(p){
@@ -670,7 +671,8 @@ function insCandidates(){
     .sort((a,b)=>a.due<b.due?-1:a.due>b.due?1:0).map(o=>{
       const it=o.ledger?null:S.items.find(i=>i.id===o.item.id);
       const led=o.ledger?(S.ledger||[]).find(e=>e.id===o.ledger):null;
-      return {...o,payee:it?.payee||null,note:led?.note||''};
+      const ov=insPayee[o.key]&&(S.payees||[]).find(x=>x.id===insPayee[o.key]);
+      return {...o,payee:ov||it?.payee||null,basePayee:it?.payee||null,note:led?.note||''};
     });
 }
 function renderIns(){
@@ -684,9 +686,11 @@ function renderIns(){
   if(!insDate.value) insDate.value=realToday;
   const C=insCandidates(); const keys=new Set(C.map(o=>o.key)); [...insSel].forEach(k=>{if(!keys.has(k)) insSel.delete(k)});
   insList.innerHTML=C.map(o=>{const pe=payeeStr(o.payee)||o.note;const late=o.due<refDate;
+    const pickSel=insSel.has(o.key)&&insMode==='remit'?`<select class="inspay" data-ipay="${o.key}" aria-label="${esc(o.item.title)} 收款帳戶">
+      <option value="">${payeeStr(o.basePayee)?'用款項設定的收款帳戶':'選收款帳戶…'}</option>${(S.payees||[]).map(x=>`<option value="${x.id}" ${insPayee[o.key]===x.id?'selected':''}>${esc(payeeStr(x))}</option>`).join('')}</select>`:'';
     return `<label class="insrow"><input type="checkbox" data-isel="${o.key}" ${insSel.has(o.key)?'checked':''}>
       <span class="num small">${md(o.due)}${late?'<br><span class="chip late">逾期</span>':''}</span>
-      <span style="min-width:0">${esc(o.item.title)}${o.est?' <span class="chip est">預估</span>':''}<div class="pe ${!pe&&insMode==='remit'?'miss':''}">${pe?esc(pe):(insMode==='remit'?'還沒有收款資訊':'')}</div></span>
+      <span style="min-width:0">${esc(o.item.title)}${o.est?' <span class="chip est">預估</span>':''}<div class="pe ${!pe&&insMode==='remit'?'miss':''}">${pe?esc(pe):(insMode==='remit'?'還沒有收款資訊':'')}</div>${pickSel}</span>
       <span class="amt">${money(o.amount)}</span></label>`}).join('')||'<div class="empty">沒有待付款項</div>';
   insManual_render(); updateInsText();
 }
@@ -854,7 +858,8 @@ document.addEventListener('change',e=>{
   if(e.target.id==='fPick'){const x=pick(e.target.value); if(x){fPBank.value=x.bank;fPName.value=x.name;fPAcct.value=x.acct} return}
   if(e.target.id==='pePick'){const x=pick(e.target.value); if(x){peBank.value=x.bank;peName.value=x.name;peAcct.value=x.acct} return}
   if(e.target.dataset&&e.target.dataset.impick!==undefined){const i=Number(e.target.dataset.impick),x=pick(e.target.value); if(x){Object.assign(insManual[i],{bank:x.bank,name:x.name,acct:x.acct});insManual_render();updateInsText()} return}
-  if(e.target.dataset&&e.target.dataset.isel){e.target.checked?insSel.add(e.target.dataset.isel):insSel.delete(e.target.dataset.isel);updateInsText();return}
+  if(e.target.dataset&&e.target.dataset.isel){e.target.checked?insSel.add(e.target.dataset.isel):insSel.delete(e.target.dataset.isel);renderIns();return}
+  if(e.target.dataset&&e.target.dataset.ipay){const k=e.target.dataset.ipay; if(e.target.value) insPayee[k]=e.target.value; else delete insPayee[k]; renderIns();return}
   if(['insFrom','insDate'].includes(e.target.id)){updateInsText();return}
   if(['hFrom','hTo'].includes(e.target.id)){hRange='';renderHistory();return}
   if(['hSrc','hKind'].includes(e.target.id)){renderHistory();return}
