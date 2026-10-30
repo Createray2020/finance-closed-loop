@@ -136,6 +136,7 @@ tr.arrow td{color:var(--muted)}
 .insrow .amt{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
 .insrow .pe{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .insrow .pe.miss{color:var(--warn)}
+.pblabel{width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:4px 6px;font-size:12px}
 .inspay{margin-top:6px;width:100%;max-width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:4px 6px;font-size:12px}
 .manrow{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;align-items:end;padding:6px 0;border-bottom:1px dashed var(--line)}
 .manrow input{width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:5px 7px;font-size:13px}
@@ -654,7 +655,7 @@ function renderLedger(){
 
 // 匯款／提款指示
 let insChan='counter', insMode='remit', insSel=new Set(), insManual=[], pEdit=null, insPayee={};
-const payeeStr=p=>p?[p.bank,p.name,p.acct].filter(Boolean).join('・'):'';
+const payeeStr=p=>p?(p.label?p.label+'｜':'')+[p.bank,p.name,p.acct].filter(Boolean).join('・'):'';
 // 常用收款帳戶：存過的收款資訊，之後可以直接選
 function rememberPayee(p){
   if(!p||!p.acct) return; S.payees=S.payees||[];
@@ -665,7 +666,7 @@ function rememberPayee(p){
 const payeeOpts=()=>'<option value="">從常用收款帳戶帶入…</option>'+(S.payees||[]).map(x=>`<option value="${x.id}">${esc(payeeStr(x))}</option>`).join('');
 function renderPayeeBook(){
   const L=S.payees||[]; set('pbSum',`常用收款帳戶（${L.length}）`);
-  pbList.innerHTML=L.map(x=>`<div class="setrow" style="grid-template-columns:minmax(0,1fr) 26px"><span>${esc(payeeStr(x))}</span><button class="x" type="button" data-pbdel="${x.id}" aria-label="刪除這個收款帳戶">×</button></div>`).join('')||'<div class="empty">還沒有存過收款帳戶</div>';
+  pbList.innerHTML=L.map(x=>`<div class="setrow" style="grid-template-columns:110px minmax(0,1fr) 26px"><input class="pblabel" data-pblabel="${x.id}" value="${esc(x.label||'')}" placeholder="性質，例：房租" aria-label="收款帳戶性質"><span>${esc([x.bank,x.name,x.acct].filter(Boolean).join('・'))}</span><button class="x" type="button" data-pbdel="${x.id}" aria-label="刪除這個收款帳戶">×</button></div>`).join('')||'<div class="empty">還沒有存過收款帳戶</div>';
   const el=document.getElementById('fPick'); if(el){const v=el.value; el.innerHTML=payeeOpts(); el.value=v;}
 }
 function insCandidates(){
@@ -863,6 +864,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   const pick=id=>(S.payees||[]).find(x=>x.id===id);
+  if(e.target.dataset&&e.target.dataset.pblabel){const x=pick(e.target.dataset.pblabel); if(x){x.label=e.target.value.trim();save();renderPayeeBook();renderIns();toast('已更新性質')} return}
   if(e.target.id==='fPick'){const x=pick(e.target.value); if(x){fPBank.value=x.bank;fPName.value=x.name;fPAcct.value=x.acct} return}
   if(e.target.id==='pePick'){const x=pick(e.target.value); if(x){peBank.value=x.bank;peName.value=x.name;peAcct.value=x.acct} return}
   if(e.target.dataset&&e.target.dataset.impick!==undefined){const i=Number(e.target.dataset.impick),x=pick(e.target.value); if(x){Object.assign(insManual[i],{bank:x.bank,name:x.name,acct:x.acct});insManual_render();updateInsText()} return}
