@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-/* Layout: 一條總覽帶（資金／逾期／期間應付／缺口）→ 左右兩欄（待付清單＋資金水位 | 帳戶＋各來源核對）→ 款項設定 */
+/* Layout: 一條總覽帶（資金／逾期／期間應付／缺口）→ 左右兩欄（待付清單 | 帳戶＋各來源核對）→ 資金水位（全寬）→ 款項設定 */
 :root{
   --bg:#eef2f0; --surface:#ffffff; --sunk:#f6f8f7; --ink:#15201b; --muted:#5a6a63; --line:#d6dfda;
   --accent:#1d6b58; --accent-ink:#ffffff; --accent-soft:#dcefe8;
@@ -128,6 +128,8 @@ td.late-paid{color:var(--warn)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{font-weight:500;color:var(--muted);font-size:12px;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:7px 8px;border-bottom:1px dashed var(--line);white-space:nowrap}
+#levelTbl td:nth-child(2){white-space:normal;overflow-wrap:anywhere;width:100%;min-width:9em}
+@media (max-width:560px){#levelTbl th:nth-child(4),#levelTbl td:nth-child(4){display:none}#levelTbl th,#levelTbl td{padding:7px 4px;font-size:12px}#levelTbl td:nth-child(2){min-width:6em}}
 td.r,th.r{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
 tr.neg td.bal{color:var(--bad);font-weight:600}
 tr.first-neg td{background:var(--bad-soft)}
@@ -218,11 +220,6 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
         </div>
         <div class="bd"><div class="list" id="payList"></div></div>
       </section>
-
-      <section class="panel">
-        <div class="hd"><h2>資金水位</h2><span class="small muted" id="levelHint"></span></div>
-        <div class="bd"><div class="tbl"><table id="levelTbl"></table></div></div>
-      </section>
     </div>
 
     <div class="stack">
@@ -252,6 +249,11 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
       </section>
     </div>
   </div>
+
+  <section class="panel level">
+    <div class="hd"><h2>資金水位</h2><span class="small muted" id="levelHint"></span></div>
+    <div class="bd"><div class="tbl"><table id="levelTbl"></table></div></div>
+  </section>
 
   <section class="panel">
     <div class="hd"><h2>款項設定</h2><span class="small muted">常態型自動每月產生；臨時款項只出現一次</span></div>
