@@ -18,7 +18,7 @@ export default function AppHeader() {
         fontWeight: 700,
       }}
     >
-      <span>個人財務閉環系統</span>
+      <span>現金流管理</span>
       <UserButton />
     </header>
   );

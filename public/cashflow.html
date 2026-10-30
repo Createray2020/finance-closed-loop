@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>現金流管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: 一條總覽帶（資金／逾期／期間應付／缺口）→ 左右兩欄（待付清單＋資金水位 | 帳戶＋各來源核對）→ 款項設定 */
+:root{
+  --bg:#eef2f0; --surface:#ffffff; --sunk:#f6f8f7; --ink:#15201b; --muted:#5a6a63; --line:#d6dfda;
+  --accent:#1d6b58; --accent-ink:#ffffff; --accent-soft:#dcefe8;
+  --warn:#a8661a; --warn-soft:#fbefdc; --bad:#b8352a; --bad-soft:#fbe3e0; --good:#2c7a4b; --good-soft:#e0f2e7;
+  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1412; --surface:#161f1b; --sunk:#121a17; --ink:#e4ebe8; --muted:#90a198; --line:#28352f;
+  --accent:#4cb596; --accent-ink:#0b1310; --accent-soft:#183a30;
+  --warn:#e3a44a; --warn-soft:#3a2b14; --bad:#ee6e60; --bad-soft:#3d1a17; --good:#5fc58a; --good-soft:#163323; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1412; --surface:#161f1b; --sunk:#121a17; --ink:#e4ebe8; --muted:#90a198; --line:#28352f;
+  --accent:#4cb596; --accent-ink:#0b1310; --accent-soft:#183a30;
+  --warn:#e3a44a; --warn-soft:#3a2b14; --bad:#ee6e60; --bad-soft:#3d1a17; --good:#5fc58a; --good-soft:#163323; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:20px}
+h1{font-size:22px;font-weight:900;margin:0;letter-spacing:.02em}
+h2{font-size:15px;font-weight:700;margin:0;text-wrap:balance}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header.top{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
+.datebox{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.datebox input{border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:3px 6px}
+.ghost{background:none;border:1px solid var(--line);border-radius:6px;padding:3px 10px;color:var(--muted)}
+.ghost:hover{color:var(--ink);border-color:var(--muted)}
+#simTag:not(:empty){background:var(--warn-soft);color:var(--warn);font-weight:700;border-radius:4px;padding:2px 8px}
+#sync{margin-left:6px}
+#sync.err{color:var(--bad);font-weight:700}
+
+/* 總覽帶 */
+.band{background:var(--surface);border:1px solid var(--line);border-radius:12px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.band>div{padding:16px 18px;display:grid;gap:4px;align-content:start;min-width:0}
+.band>div+div{border-left:1px solid var(--line)}
+.band .lbl{font-size:12px;color:var(--muted);letter-spacing:.06em}
+.band .val{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-size:24px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.band .sub{font-size:12px;color:var(--muted)}
+.band .gap{background:var(--bad-soft);border-radius:0 11px 11px 0}
+.band .gap .val{color:var(--bad)}
+.band .gap.ok{background:var(--good-soft)}
+.band .gap.ok .val{color:var(--good)}
+.band .over .val{color:var(--bad)}
+.band .over.zero .val{color:var(--muted)}
+
+.seg{display:inline-flex;background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px}
+.seg button{border:0;background:none;padding:5px 14px;border-radius:6px;color:var(--muted);font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+
+.cols{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:20px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;display:grid;min-width:0}
+.panel>.hd{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.panel>.bd{padding:12px 16px;display:grid;gap:10px;min-width:0}
+.stack{display:grid;gap:20px;min-width:0}
+
+/* 待付清單 */
+.list{display:grid}
+.grp{font-size:12px;color:var(--muted);letter-spacing:.06em;padding:12px 0 6px;display:flex;justify-content:space-between;border-bottom:1px solid var(--line)}
+.grp.bad{color:var(--bad)}
+.row{display:grid;grid-template-columns:62px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px dashed var(--line)}
+.row .d{font-family:var(--f-num);font-size:13px;line-height:1.2}
+.row .d small{display:block;color:var(--muted);font-size:11px}
+.row .t{min-width:0}
+.row .t b{font-weight:500;display:block;overflow-wrap:anywhere}
+.row .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.row .amt{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;text-align:right;white-space:nowrap}
+.row.paid{opacity:.55}
+.row.paid .amt{text-decoration:line-through}
+.chip{font-size:11px;border-radius:4px;padding:1px 6px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.rec{border-color:transparent;background:var(--accent-soft);color:var(--accent)}
+.chip.once{border-color:transparent;background:var(--warn-soft);color:var(--warn)}
+.chip.late{border-color:transparent;background:var(--bad-soft);color:var(--bad);font-weight:700}
+.chip.today{border-color:transparent;background:var(--warn);color:var(--surface);font-weight:700}
+.pay{border:1px solid var(--accent);background:none;color:var(--accent);border-radius:6px;padding:3px 10px;font-size:12px;white-space:nowrap}
+.pay:hover{background:var(--accent);color:var(--accent-ink)}
+.undo{border:0;background:none;color:var(--muted);font-size:12px;text-decoration:underline;padding:3px 4px}
+.paybox{grid-column:1/-1;background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:10px}
+.paybox .ttl{font-size:12px;color:var(--muted);letter-spacing:.06em}
+.srcopts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.srcopt{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 8px;align-items:start;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;cursor:pointer}
+.srcopt:has(input:checked){border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.srcopt input{margin:3px 0 0;accent-color:var(--accent)}
+.srcopt b{font-weight:500;display:block}
+.srcopt .after{font-size:12px;color:var(--muted);font-family:var(--f-num)}
+.srcopt .after.neg{color:var(--bad);font-weight:600}
+.srcopt .def{font-size:11px;color:var(--accent)}
+.payfields{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.payfields .fld input{width:150px}
+.payfields .btns{display:flex;gap:8px;margin-left:auto}
+.hfilters{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.hfilters .fld{width:150px}
+.hfilters .fld:last-child{width:180px}
+.hstats{display:flex;flex-wrap:wrap;gap:8px}
+.hstat{background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--muted)}
+.hstat b{color:var(--ink);font-family:var(--f-num);font-weight:600;margin-left:4px}
+td.late-paid{color:var(--warn)}
+.remind{border-color:var(--warn)}
+.remind>.hd{background:var(--warn-soft);border-radius:11px 11px 0 0}
+.remind>.hd h2{color:var(--warn)}
+.ritem{display:grid;gap:8px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.ritem:last-child{border-bottom:0}
+.ritem .msg{font-size:13px}
+.ritem .msg b{font-weight:700}
+.ritem form{display:flex;gap:8px}
+.ritem input{flex:1;min-width:0;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:6px 8px;font-family:var(--f-num);text-align:right}
+.chip.warnchip{border-color:transparent;background:var(--warn-soft);color:var(--warn);font-weight:700}
+.chip.est{border-style:dashed}
+.empty{padding:18px 0;color:var(--muted);text-align:center}
+
+/* 水位表 */
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-weight:500;color:var(--muted);font-size:12px;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px dashed var(--line);white-space:nowrap}
+td.r,th.r{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+tr.neg td.bal{color:var(--bad);font-weight:600}
+tr.first-neg td{background:var(--bad-soft)}
+
+/* 帳戶 */
+.acct{display:grid;grid-template-columns:minmax(0,1fr) 140px 26px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)}
+.acct .nm b{font-weight:500}
+.acct input{width:100%;text-align:right;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:4px 8px;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.x{border:0;background:none;color:var(--muted);font-size:16px;line-height:1;padding:2px}
+.x:hover{color:var(--bad)}
+.subhd{font-size:12px;color:var(--muted);letter-spacing:.06em;display:flex;justify-content:space-between;padding-top:6px}
+.total{display:flex;justify-content:space-between;padding-top:8px;font-weight:700}
+
+.src{display:grid;gap:8px}
+.srcrow{display:grid;gap:4px}
+.srcrow .top{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.bar{height:8px;border-radius:4px;background:var(--sunk);border:1px solid var(--line);overflow:hidden;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent)}
+.bar.short i{background:var(--bad)}
+.srcrow .bot{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.srcrow .bot .neg{color:var(--bad);font-weight:600}
+.srcrow .bot .pos{color:var(--good)}
+
+/* 表單 */
+form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end}
+.fld{display:grid;gap:4px;min-width:0}
+.fld label{font-size:12px;color:var(--muted)}
+.fld input,.fld select{width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:6px 8px}
+.primary{background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:7px 14px;font-weight:500}
+.kindseg{grid-column:1/-1}
+.setlist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.setrow{display:grid;grid-template-columns:88px minmax(0,1fr) auto 26px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.setrow .amt{font-family:var(--f-num);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.note{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--muted)}
+.note b{color:var(--ink)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+
+@media (max-width:900px){
+  .cols{grid-template-columns:minmax(0,1fr)}
+  .band{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .band>div:nth-child(3){border-left:0;border-top:1px solid var(--line)}
+  .band>div:nth-child(4){border-top:1px solid var(--line)}
+  .band .gap{border-radius:0 0 11px 0}
+  .setlist{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:460px){
+  .band .val{font-size:19px}
+  .row{grid-template-columns:52px minmax(0,1fr) auto;}
+  .row .act{grid-column:2/-1;justify-self:end}
+  .acct{grid-template-columns:minmax(0,1fr) 112px 22px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>現金流管理</h1>
+      <div class="muted small">現有資金 − 待付款項 = 缺口。<span id="sync"></span></div>
+    </div>
+    <div class="datebox">
+      <span class="small" id="simTag"></span>
+      <button class="ghost small" id="btnSim" type="button" aria-expanded="false">模擬日期</button>
+      <span id="simBox" hidden><input type="date" id="refDate" aria-label="模擬日期"></span>
+      <button class="ghost small" id="btnToday" type="button" hidden>回到今天</button>
+    </div>
+  </header>
+
+  <section class="band" aria-label="總覽">
+    <div><span class="lbl">現有資金</span><span class="val" id="sFunds">–</span><span class="sub" id="sFundsSub"></span></div>
+    <div class="over" id="sOverBox"><span class="lbl">逾期未付</span><span class="val" id="sOver">–</span><span class="sub" id="sOverSub"></span></div>
+    <div><span class="lbl" id="sWinLbl">期間應付</span><span class="val" id="sWin">–</span><span class="sub" id="sWinSub"></span></div>
+    <div class="gap" id="sGapBox"><span class="lbl" id="sGapLbl">資金缺口</span><span class="val" id="sGap">–</span><span class="sub" id="sGapSub"></span><span class="sub" id="sGapSub2"></span></div>
+  </section>
+
+  <div class="cols">
+    <div class="stack">
+      <section class="panel">
+        <div class="hd">
+          <h2>待支付款項</h2>
+          <div class="seg" role="group" aria-label="檢視範圍">
+            <button type="button" data-win="day" aria-pressed="false">當日</button>
+            <button type="button" data-win="week" aria-pressed="true">每週</button>
+            <button type="button" data-win="month" aria-pressed="false">每月</button>
+          </div>
+        </div>
+        <div class="bd"><div class="list" id="payList"></div></div>
+      </section>
+
+      <section class="panel">
+        <div class="hd"><h2>資金水位</h2><span class="small muted" id="levelHint"></span></div>
+        <div class="bd"><div class="tbl"><table id="levelTbl"></table></div></div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel remind" id="remind" hidden>
+        <div class="hd"><h2>帳單金額待輸入</h2><span class="small muted" id="remindN"></span></div>
+        <div class="bd" id="remindList"></div>
+      </section>
+      <section class="panel">
+        <div class="hd"><h2>現有資金</h2><span class="small muted">直接改金額即可</span></div>
+        <div class="bd">
+          <div id="acctList"></div>
+          <details>
+            <summary class="small muted" style="cursor:pointer;padding-top:6px">＋ 新增帳戶</summary>
+            <form class="f" id="acctForm" style="margin-top:10px">
+              <div class="fld"><label for="aName">名稱</label><input id="aName" required placeholder="例：中信 數位帳戶"></div>
+              <div class="fld"><label for="aNo">帳號末四碼</label><input id="aNo" maxlength="4" inputmode="numeric" placeholder="例：3456"></div>
+              <div class="fld"><label for="aBal">目前餘額</label><input id="aBal" type="number" min="0" step="1" required></div>
+              <div class="fld"><button class="primary" type="submit">新增帳戶</button></div>
+            </form>
+          </details>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="hd"><h2>各付款來源核對</h2><span class="small muted" id="srcHint"></span></div>
+        <div class="bd"><div class="src" id="srcList"></div></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="hd"><h2>款項設定</h2><span class="small muted">常態型自動每月產生；臨時款項只出現一次</span></div>
+    <div class="bd">
+      <form class="f" id="itemForm">
+        <div class="kindseg"><div class="seg" role="group" aria-label="款項類型">
+          <button type="button" data-kind="recurring" aria-pressed="true">常態型（每月固定）</button>
+          <button type="button" data-kind="once" aria-pressed="false">臨時新增（一次性）</button>
+        </div></div>
+        <div class="fld" id="fDayWrap"><label for="fDay">每月幾號</label><input id="fDay" type="number" min="1" max="31" value="5"></div>
+        <div class="fld" id="fDateWrap" hidden><label for="fDate">付款日期</label><input id="fDate" type="date"></div>
+        <div class="fld"><label for="fTitle">款項事由</label><input id="fTitle" required placeholder="例：房租"></div>
+        <div class="fld" id="fVarWrap"><label for="fVar">金額類型</label><select id="fVar"><option value="">每期固定</option><option value="1">每期不同（如信用卡）</option></select></div>
+        <div class="fld" id="fCloseWrap" hidden><label for="fClose">結帳日（每月幾號）</label><input id="fClose" type="number" min="1" max="31" value="25"></div>
+        <div class="fld"><label for="fAmt" id="fAmtLbl">金額</label><input id="fAmt" type="number" min="1" step="1" required></div>
+        <div class="fld"><label for="fMethod">付款方式</label><select id="fMethod"></select></div>
+        <div class="fld"><button class="primary" type="submit">加入款項</button></div>
+      </form>
+      <div class="setlist">
+        <div><div class="subhd"><span>常態型款項</span><span id="recTotal" class="num"></span></div><div id="recList"></div></div>
+        <div><div class="subhd"><span>臨時款項（尚未付）</span><span id="onceTotal" class="num"></span></div><div id="onceList"></div></div>
+      </div>
+      <div class="note">
+        <b>規則說明</b>　款項過了付款日當天仍未標記已付，隔天起自動轉入「逾期未付」，並持續算進每個檢視範圍的缺口。
+        「每週」＝基準日起 7 天、「每月」＝基準日起 30 天。缺口＝逾期未付＋範圍內應付 − 現有資金。標記已付時，金額會自動從對應帳戶（或現金部位）扣除。
+        每期金額不同的常態款項（如信用卡），到了結帳日右側會出現「帳單金額待輸入」，輸入前先用預估金額算缺口。想預先看某天的狀況，按右上角「模擬日期」調整，看完按「回到今天」。
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="history">
+    <div class="hd"><h2>付款紀錄</h2><span class="small muted" id="hSum"></span></div>
+    <div class="bd">
+      <div class="hfilters">
+        <div class="seg" role="group" aria-label="期間">
+          <button type="button" data-hr="this" aria-pressed="false">本月</button>
+          <button type="button" data-hr="last" aria-pressed="false">上個月</button>
+          <button type="button" data-hr="90" aria-pressed="false">近 90 天</button>
+          <button type="button" data-hr="all" aria-pressed="true">全部</button>
+        </div>
+        <div class="fld"><label for="hFrom">出帳日期 從</label><input id="hFrom" type="date"></div>
+        <div class="fld"><label for="hTo">到</label><input id="hTo" type="date"></div>
+        <div class="fld"><label for="hSrc">出帳來源</label><select id="hSrc"></select></div>
+        <div class="fld"><label for="hKind">類型</label><select id="hKind"><option value="">全部</option><option value="recurring">常態型</option><option value="once">臨時</option></select></div>
+        <div class="fld"><label for="hQ">搜尋事由</label><input id="hQ" type="search" placeholder="例：房租"></div>
+      </div>
+      <div class="hstats" id="hStats"></div>
+      <div class="tbl"><table id="hTbl"></table></div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parse=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const addDays=(s,n)=>{const d=parse(s);d.setDate(d.getDate()+n);return ymd(d)};
+const diffDays=(a,b)=>Math.round((parse(b)-parse(a))/86400000);
+const money=n=>'$'+Math.round(n).toLocaleString('zh-TW');
+const md=s=>{const d=parse(s);return `${d.getMonth()+1}/${d.getDate()}`};
+const WK='日一二三四五六';
+const wd=s=>'週'+WK[parse(s).getDay()];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const realToday=ymd(new Date());
+
+let refDate=realToday, win='week', formKind='recurring', S, payingKey=null;
+
+// 結帳日：繳款日之前最近一次的結帳日（結帳日 < 繳款日 → 同月，否則上個月）
+function closingFor(due,closeDay){
+  const d=parse(due); let y=d.getFullYear(), m=d.getMonth();
+  if(!(closeDay<d.getDate())){m--; if(m<0){m=11;y--}}
+  return ymd(new Date(y,m,Math.min(closeDay,new Date(y,m+1,0).getDate())));
+}
+function occurrences(s,until){
+  const out=[];
+  for(const it of s.items){
+    if(it.kind==='once'){ out.push({key:it.id+'|'+it.date,item:it,due:it.date,amount:it.amount}); continue; }
+    const st=parse(it.start); let y=st.getFullYear(), m=st.getMonth();
+    for(let guard=0;guard<60;guard++){
+      const dim=new Date(y,m+1,0).getDate();
+      const due=ymd(new Date(y,m,Math.min(it.day,dim)));
+      if(due>until) break;
+      if(due>=it.start){
+        const key=it.id+'|'+due, o={key,item:it,due,amount:it.amount};
+        if(it.variable){
+          o.closing=closingFor(due,it.closeDay);
+          const v=(s.amounts||{})[key];
+          if(v!=null){o.amount=v;o.billed=true}else{o.est=true;o.needInput=o.closing<=refDate}
+        }
+        out.push(o);
+      }
+      m++; if(m>11){m=0;y++;}
+    }
+  }
+  return out;
+}
+
+const winDays={day:1,week:7,month:30};
+const winName={day:'今天',week:'未來 7 天',month:'未來 30 天'};
+const acctById=id=>S.accounts.find(a=>a.id===id);
+const methodLabel=id=>{const a=acctById(id); if(!a) return '（帳戶已刪除）'; return a.type==='cash'?'現金提領':`轉帳・${a.name}${a.no?' ****'+a.no:''}`};
+
+function compute(){
+  const end=addDays(refDate,winDays[win]-1);
+  const all=occurrences(S,addDays(refDate,30)).map(o=>({...o,paid:S.paid[o.key]}));
+  const overdue=all.filter(o=>!o.paid&&o.due<refDate).sort((a,b)=>a.due<b.due?-1:1);
+  const inWin=all.filter(o=>o.due>=refDate&&o.due<=end).sort((a,b)=>a.due<b.due?-1:a.due>b.due?1:0);
+  const unpaidWin=inWin.filter(o=>!o.paid);
+  const funds=S.accounts.reduce((t,a)=>t+Number(a.balance||0),0);
+  const sum=l=>l.reduce((t,o)=>t+o.amount,0);
+  return {end,overdue,inWin,unpaidWin,funds,overSum:sum(overdue),winSum:sum(unpaidWin)};
+}
+
+function render(){
+  const C=compute();
+  document.getElementById('refDate').value=refDate;
+  set('simTag',refDate===realToday?'':`模擬中：${md(refDate)} ${wd(refDate)}`);
+  document.getElementById('btnToday').hidden=refDate===realToday;
+  document.querySelectorAll('[data-win]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.win===win));
+
+  // 總覽
+  const cash=S.accounts.filter(a=>a.type==='cash').reduce((t,a)=>t+Number(a.balance),0);
+  set('sFunds',money(C.funds)); set('sFundsSub',`現金 ${money(cash)}・銀行 ${money(C.funds-cash)}`);
+  set('sOver',money(C.overSum)); set('sOverSub',C.overdue.length?`${C.overdue.length} 筆，最久逾期 ${diffDays(C.overdue[0].due,refDate)} 天`:'目前沒有逾期');
+  document.getElementById('sOverBox').classList.toggle('zero',!C.overdue.length);
+  set('sWinLbl',`${winName[win]}應付`); set('sWin',money(C.winSum));
+  set('sWinSub',win==='day'?`${md(refDate)} ${wd(refDate)}・${C.unpaidWin.length} 筆`:`${md(refDate)}–${md(C.end)}・${C.unpaidWin.length} 筆`);
+  const need=C.overSum+C.winSum, gap=need-C.funds;
+  // 資金可支付到幾號：逾期先付，再依日期累計，找出第一個付不出來的日子，取前一天
+  const HZ=90, horizon=addDays(refDate,HZ-1);
+  const fut=occurrences(S,horizon).filter(o=>!S.paid[o.key]&&o.due>=refDate).sort((a,b)=>a.due<b.due?-1:1);
+  let run=C.funds-C.overSum, failDay=null, failItems=[], short=0;
+  if(run<0){failDay='over';short=-run}
+  else{const days={};fut.forEach(o=>(days[o.due]=days[o.due]||[]).push(o));
+    for(const d of Object.keys(days).sort()){const s=days[d].reduce((t,o)=>t+o.amount,0); if(run-s<0){failDay=d;failItems=days[d];short=s-run;break} run-=s;}}
+  const gb=document.getElementById('sGapBox');
+  const danger=failDay==='over'||(failDay&&failDay<=C.end);
+  gb.classList.toggle('ok',!danger);
+  set('sGapLbl','現有資金可支付到');
+  if(failDay==='over'){set('sGap','已不足');set('sGapSub',`連逾期款項都付不完，還差 ${money(short)}`)}
+  else if(failDay===refDate){set('sGap','今天就不夠');set('sGapSub',`今天的「${failItems.map(o=>o.item.title).join('、')}」還差 ${money(short)}`)}
+  else if(failDay){const last=addDays(failDay,-1);set('sGap',`${md(last)}（${wd(last)}）`);
+    set('sGapSub',`${md(failDay)} 的「${failItems.map(o=>o.item.title).join('、')}」開始付不出，差 ${money(short)}`)}
+  else{set('sGap',`${md(horizon)} 之後`);set('sGapSub',`未來 ${HZ} 天的款項都付得起，付完還剩 ${money(run)}`)}
+  set('sGapSub2',gap>0?`${winName[win]}缺口 ${money(gap)}`:`${winName[win]}付完還剩 ${money(-gap)}`);
+
+  // 待付清單
+  let h='';
+  if(C.overdue.length){
+    h+=`<div class="grp bad"><span>逾期未付</span><span class="num">${money(C.overSum)}</span></div>`;
+    h+=C.overdue.map(o=>rowHTML(o,'late')).join('');
+  }
+  const byDay={}; C.inWin.forEach(o=>(byDay[o.due]=byDay[o.due]||[]).push(o));
+  const days=Object.keys(byDay).sort();
+  if(!days.length) h+=`<div class="empty">${winName[win]}沒有排定的款項</div>`;
+  days.forEach(d=>{
+    const s=byDay[d].filter(o=>!o.paid).reduce((t,o)=>t+o.amount,0);
+    const lbl=d===refDate?'今天':`${md(d)} ${wd(d)}・${diffDays(refDate,d)} 天後`;
+    h+=`<div class="grp"><span>${lbl}</span><span class="num">${money(s)}</span></div>`;
+    h+=byDay[d].map(o=>rowHTML(o,d===refDate?'today':'')).join('');
+  });
+  document.getElementById('payList').innerHTML=h;
+
+  // 資金水位
+  const q=[...C.overdue,...C.unpaidWin];
+  let bal=C.funds, cum=0, firstNeg=null;
+  let t=`<thead><tr><th>日期</th><th>款項</th><th class="r">應付</th><th class="r">累計應付</th><th class="r">剩餘資金</th></tr></thead><tbody>`;
+  t+=`<tr><td class="muted">起點</td><td class="muted">現有資金</td><td class="r"></td><td class="r"></td><td class="r bal">${money(bal)}</td></tr>`;
+  q.forEach(o=>{
+    cum+=o.amount; bal-=o.amount;
+    const neg=bal<0, fn=neg&&firstNeg===null; if(fn) firstNeg=o;
+    t+=`<tr class="${neg?'neg':''} ${fn?'first-neg':''}"><td>${o.due<refDate?'<span class="chip late">逾期</span>':md(o.due)}</td><td>${esc(o.item.title)}${o.est?' <span class="chip est">預估</span>':''}</td><td class="r">${money(o.amount)}</td><td class="r">${money(cum)}</td><td class="r bal">${bal<0?'−'+money(-bal):money(bal)}</td></tr>`;
+  });
+  if(!q.length) t+=`<tr><td colspan="5" class="empty">沒有待付款項</td></tr>`;
+  document.getElementById('levelTbl').innerHTML=t+'</tbody>';
+  set('levelHint',firstNeg?`付到「${firstNeg.item.title}」${firstNeg.due<refDate?'':'（'+md(firstNeg.due)+'）'}時資金開始不夠`:'範圍內資金都撐得住');
+
+  // 帳戶
+  const cashA=S.accounts.filter(a=>a.type==='cash'), bankA=S.accounts.filter(a=>a.type==='bank');
+  const aRow=a=>`<div class="acct"><div class="nm"><b>${esc(a.name)}</b>${a.no?`<div class="small muted num">****${esc(a.no)}</div>`:''}</div>
+    <input type="number" step="1" id="bal-${a.id}" data-acct="${a.id}" value="${a.balance}" aria-label="${esc(a.name)} 餘額">
+    ${a.type==='cash'?'<span></span>':`<button class="x" type="button" data-delacct="${a.id}" aria-label="刪除 ${esc(a.name)}">×</button>`}</div>`;
+  document.getElementById('acctList').innerHTML=
+    `<div class="subhd"><span>現金部位</span><span class="num">${money(cashA.reduce((t,a)=>t+Number(a.balance),0))}</span></div>`+cashA.map(aRow).join('')+
+    `<div class="subhd"><span>銀行帳戶</span><span class="num">${money(bankA.reduce((t,a)=>t+Number(a.balance),0))}</span></div>`+bankA.map(aRow).join('')+
+    `<div class="total"><span>合計</span><span class="num">${money(C.funds)}</span></div>`;
+
+  // 各來源核對
+  set('srcHint',`逾期＋${winName[win]}`);
+  document.getElementById('srcList').innerHTML=S.accounts.map(a=>{
+    const due=q.filter(o=>o.item.method===a.id).reduce((t,o)=>t+o.amount,0);
+    const diff=Number(a.balance)-due, short=diff<0;
+    const pct=due?Math.min(100,due/Math.max(1,Number(a.balance))*100):0;
+    return `<div class="srcrow"><div class="top"><span>${a.type==='cash'?'現金提領':esc(a.name)}</span><span class="num">${money(due)} / ${money(a.balance)}</span></div>
+      <div class="bar ${short?'short':''}"><i style="width:${pct}%"></i></div>
+      <div class="bot"><span>要付 / 帳上</span>${due?`<span class="${short?'neg':'pos'}">${short?'不足 '+money(-diff):'足夠，剩 '+money(diff)}</span>`:'<span>沒有款項從這裡付</span>'}</div></div>`;
+  }).join('');
+
+  // 帳單金額待輸入
+  const pend=occurrences(S,addDays(refDate,62)).filter(o=>o.needInput&&!S.paid[o.key]).sort((a,b)=>a.due<b.due?-1:1);
+  document.getElementById('remind').hidden=!pend.length;
+  set('remindN',pend.length?`${pend.length} 筆`:'');
+  document.getElementById('remindList').innerHTML=pend.map(o=>`<div class="ritem">
+    <div class="msg"><b>${esc(o.item.title)}</b> 已經到了結帳日（${md(o.closing)}），請輸入金額。<div class="small muted">${md(o.due)} ${wd(o.due)} 繳款・${esc(methodLabel(o.item.method))}・目前用預估 ${money(o.item.amount)} 計算缺口</div></div>
+    <form data-amtform="${o.key}"><input type="number" min="0" step="1" id="amt-${o.key.replace('|','-')}" placeholder="本期帳單金額" aria-label="${esc(o.item.title)} ${md(o.due)} 帳單金額"><button class="primary" type="submit">確認金額</button></form></div>`).join('');
+  renderHistory();
+  // 款項設定
+  const sel=document.getElementById('fMethod'), cur=sel.value;
+  sel.innerHTML=S.accounts.map(a=>`<option value="${a.id}">${esc(methodLabel(a.id))}</option>`).join('');
+  if(S.accounts.some(a=>a.id===cur)) sel.value=cur;
+  const rec=S.items.filter(i=>i.kind==='recurring').sort((a,b)=>a.day-b.day);
+  const once=S.items.filter(i=>i.kind==='once'&&!S.paid[i.id+'|'+i.date]).sort((a,b)=>a.date<b.date?-1:1);
+  set('recTotal','每月 '+money(rec.reduce((t,i)=>t+i.amount,0)));
+  set('onceTotal',money(once.reduce((t,i)=>t+i.amount,0)));
+  const sRow=(i,lbl)=>`<div class="setrow"><span class="num">${lbl}</span><div style="min-width:0"><div>${esc(i.title)}</div><div class="small muted">${esc(methodLabel(i.method))}</div></div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}</span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button></div>`;
+  document.getElementById('recList').innerHTML=rec.map(i=>sRow(i,`每月 ${i.day} 號`+(i.variable?`<div class="small muted">結帳 ${i.closeDay} 號</div>`:''))).join('')||'<div class="empty">尚無</div>';
+  document.getElementById('onceList').innerHTML=once.map(i=>sRow(i,md(i.date))).join('')||'<div class="empty">尚無</div>';
+}
+
+let hRange='all';
+function setRange(r){
+  hRange=r; const t=parse(refDate); let f='',to='';
+  if(r==='this'){f=ymd(new Date(t.getFullYear(),t.getMonth(),1));to=ymd(new Date(t.getFullYear(),t.getMonth()+1,0))}
+  if(r==='last'){f=ymd(new Date(t.getFullYear(),t.getMonth()-1,1));to=ymd(new Date(t.getFullYear(),t.getMonth(),0))}
+  if(r==='90'){f=addDays(refDate,-89);to=refDate}
+  hFrom.value=f; hTo.value=to; renderHistory();
+}
+function renderHistory(){
+  document.querySelectorAll('[data-hr]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.hr===hRange));
+  const sel=hSrc, cur=sel.value;
+  const srcIds=[...new Set([...S.accounts.map(a=>a.id),...Object.values(S.paid).map(p=>p.source)])];
+  const sName=id=>{const a=acctById(id);return a?(a.type==='cash'?'現金部位':a.name+(a.no?' ****'+a.no:'')):'已刪除帳戶'};
+  sel.innerHTML='<option value="">全部</option>'+srcIds.map(id=>`<option value="${id}">${esc(sName(id))}</option>`).join('');
+  sel.value=srcIds.includes(cur)?cur:'';
+  const f=hFrom.value,to=hTo.value,src=sel.value,kind=hKind.value,q=hQ.value.trim();
+  const recs=Object.entries(S.paid).map(([key,p])=>{
+    const [itemId,due]=key.split('|'); const it=S.items.find(i=>i.id===itemId);
+    return {key,due,...p,title:p.title||(it?it.title:'（已刪除款項）'),kind:p.kind||(it?it.kind:''),planned:it?(it.variable?(S.amounts[key]??null):it.amount):null};
+  }).filter(r=>(!f||r.on>=f)&&(!to||r.on<=to)&&(!src||r.source===src)&&(!kind||r.kind===kind)&&(!q||r.title.includes(q)))
+    .sort((a,b)=>a.on<b.on?1:a.on>b.on?-1:(a.due<b.due?1:-1));
+  const total=recs.reduce((t,r)=>t+r.amount,0), lateN=recs.filter(r=>r.on>r.due).length;
+  const bySrc={}; recs.forEach(r=>bySrc[r.source]=(bySrc[r.source]||0)+r.amount);
+  set('hSum',`${recs.length} 筆・合計 ${money(total)}`);
+  hStats.innerHTML=`<span class="hstat">筆數<b>${recs.length}</b></span><span class="hstat">實付合計<b>${money(total)}</b></span><span class="hstat">晚付<b>${lateN} 筆</b></span>`+
+    Object.entries(bySrc).sort((a,b)=>b[1]-a[1]).map(([id,v])=>`<span class="hstat">${esc(sName(id))}<b>${money(v)}</b></span>`).join('');
+  let t=`<thead><tr><th>出帳日期</th><th>應付日期</th><th>款項事由</th><th>類型</th><th>出帳來源</th><th class="r">實付金額</th><th></th></tr></thead><tbody>`;
+  t+=recs.map(r=>{const late=diffDays(r.due,r.on);
+    return `<tr><td class="num">${r.on.replace(/-/g,'/')}</td><td class="num ${late>0?'late-paid':''}">${md(r.due)}${late>0?` <span class="small">晚 ${late} 天</span>`:''}</td>
+    <td>${esc(r.title)}</td><td>${r.kind==='recurring'?'<span class="chip rec">常態</span>':r.kind==='once'?'<span class="chip once">臨時</span>':''}</td>
+    <td>${esc(sName(r.source))}</td><td class="r">${money(r.amount)}${r.planned!==null&&r.planned!==r.amount?`<div class="small muted">原 ${money(r.planned)}</div>`:''}</td>
+    <td><button class="undo" type="button" data-undo="${r.key}">取消已付</button></td></tr>`}).join('');
+  if(!recs.length) t+=`<tr><td colspan="7" class="empty">這個條件下沒有付款紀錄</td></tr>`;
+  hTbl.innerHTML=t+'</tbody>';
+}
+
+function rowHTML(o,state){
+  const it=o.item, late=o.due<refDate;
+  let kind=it.kind==='recurring'?`<span class="chip rec">常態・每月 ${it.day} 號</span>`:'<span class="chip once">臨時</span>';
+  if(it.variable&&!o.paid) kind+=o.billed?`<span class="chip">帳單金額已輸入</span><button class="undo" type="button" data-reamt="${o.key}">改金額</button>`
+    :o.needInput?`<span class="chip warnchip">${md(o.closing)} 已結帳・待輸入金額</span>`:`<span class="chip">${md(o.closing)} 結帳後輸入金額</span>`;
+  const srcName=id=>{const a=acctById(id);return a?(a.type==='cash'?'現金部位':a.name):'已刪除帳戶'};
+  const st=o.paid?`<span class="chip">已付 ${md(o.paid.on)}・從${esc(srcName(o.paid.source))}出帳${o.paid.amount!==o.amount?'・實付 '+money(o.paid.amount):''}</span>`:late?`<span class="chip late">逾期 ${diffDays(o.due,refDate)} 天</span>`:state==='today'?'<span class="chip today">今天到期</span>':'';
+  const open=!o.paid&&payingKey===o.key;
+  const act=o.paid?`<button class="undo" type="button" data-undo="${o.key}">取消已付</button>`:open?'':`<button class="pay" type="button" data-pay="${o.key}">標記已付</button>`;
+  const box=open?`<div class="paybox"><div class="ttl">從哪裡出帳？預設是款項設定的付款方式，可以改選</div>
+    <div class="srcopts">${S.accounts.map(a=>{const after=Number(a.balance)-o.amount;return `<label class="srcopt"><input type="radio" name="paysrc" value="${a.id}" ${a.id===it.method?'checked':''}>
+      <span><b>${a.type==='cash'?'現金部位':esc(a.name)}${a.no?` <span class="small muted num">****${esc(a.no)}</span>`:''}</b>
+      <span class="after ${after<0?'neg':''}">${money(a.balance)} → ${after<0?'−'+money(-after):money(after)}</span>${a.id===it.method?' <span class="def">預設</span>':''}</span></label>`}).join('')}</div>
+    <div class="payfields"><div class="fld"><label for="payAmt">實付金額</label><input id="payAmt" type="number" min="1" step="1" value="${o.amount}"></div>
+      <div class="fld"><label for="payOn">出帳日期</label><input id="payOn" type="date" value="${refDate}"></div>
+      <div class="btns"><button class="ghost" type="button" data-paycancel="1">取消</button><button class="primary" type="button" data-payok="${o.key}">確認出帳</button></div></div></div>`:'';
+  return `<div class="row ${o.paid?'paid':''}"><div class="d">${md(o.due)}<small>${wd(o.due)}</small></div>
+    <div class="t"><b>${esc(it.title)}</b><div class="meta">${kind}<span class="chip">${esc(methodLabel(it.method))}</span>${st}</div></div>
+    <div class="amt">${money(o.amount)}${o.est?'<div class="small muted" style="font-weight:400">預估</div>':''}</div><div class="act">${act}</div>${box}</div>`;
+}
+
+function set(id,v){document.getElementById(id).textContent=v}
+// 持久化：存到 /api/state（Neon，每位使用者一份）
+const APP='cashflow-v1';
+const emptyState=()=>({app:APP,accounts:[{id:'cash',name:'現金部位',type:'cash',no:'',balance:0}],items:[],paid:{},amounts:{}});
+let _loaded=false, _saveT=null, _saving=Promise.resolve();
+function syncMsg(t,err){const el=document.getElementById('sync');el.textContent=t;el.classList.toggle('err',!!err)}
+function save(){
+  if(!_loaded) return;
+  syncMsg('儲存中…');
+  clearTimeout(_saveT);
+  _saveT=setTimeout(()=>{
+    const body=JSON.stringify({...S,app:APP});
+    _saving=_saving.then(()=>fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body})
+      .then(r=>{if(!r.ok) throw new Error(r.status); syncMsg('已同步')})
+      .catch(()=>syncMsg('沒存到雲端，請檢查網路後再改一次',true)));
+  },400);
+}
+async function load(){
+  try{
+    const r=await fetch('/api/state',{cache:'no-store'});
+    if(r.status===401){location.href='/sign-in';return null}
+    if(!r.ok) throw new Error(r.status);
+    const j=await r.json(); const d=j&&j.data;
+    if(d&&d.app===APP) return d;
+    return emptyState();
+  }catch(e){syncMsg('讀取失敗，請重新整理頁面',true);return 'error'}
+}
+let tt; function toast(m){const el=document.getElementById('toast'); el.textContent=m; el.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>el.classList.remove('on'),1800)}
+const uid=()=>Math.random().toString(36).slice(2,8);
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.reamt){delete S.amounts[b.dataset.reamt];save();render();toast('請在右側重新輸入帳單金額');return}
+  if(b.dataset.hr){setRange(b.dataset.hr);return}
+  if(b.dataset.win){win=b.dataset.win;render();return}
+  if(b.dataset.kind){formKind=b.dataset.kind;document.querySelectorAll('[data-kind]').forEach(x=>x.setAttribute('aria-pressed',x===b));
+    document.getElementById('fDayWrap').hidden=formKind!=='recurring';fVarWrap.hidden=formKind!=='recurring';syncVar();document.getElementById('fDateWrap').hidden=formKind!=='once';return}
+  if(b.dataset.pay){payingKey=b.dataset.pay;render();return}
+  if(b.dataset.paycancel){payingKey=null;render();return}
+  if(b.dataset.payok){
+    const o=occurrences(S,addDays(refDate,30)).find(x=>x.key===b.dataset.payok); if(!o) return;
+    const src=(document.querySelector('input[name="paysrc"]:checked')||{}).value, a=acctById(src);
+    const amt=Number(document.getElementById('payAmt').value), on=document.getElementById('payOn').value||refDate;
+    if(!a){toast('請選出帳的帳戶或現金部位');return}
+    if(!(amt>0)){toast('實付金額要大於 0');return}
+    a.balance=Number(a.balance)-amt;
+    S.paid[o.key]={on,source:src,amount:amt,title:o.item.title,kind:o.item.kind};
+    if(o.item.variable) S.amounts[o.key]=amt;
+    payingKey=null;save();render();toast(`${o.item.title} 已付，${a.type==='cash'?'現金部位':a.name} 扣 ${money(amt)}`);return}
+  if(b.dataset.undo){
+    const p=S.paid[b.dataset.undo]; if(!p) return; const a=acctById(p.source); if(a) a.balance=Number(a.balance)+p.amount;
+    delete S.paid[b.dataset.undo]; save();render();toast('已取消，金額已退回帳戶');return}
+  if(b.dataset.delitem){S.items=S.items.filter(i=>i.id!==b.dataset.delitem);save();render();toast('已刪除款項');return}
+  if(b.dataset.delacct){
+    if(S.items.some(i=>i.method===b.dataset.delacct)){toast('還有款項從這個帳戶付，請先改掉或刪除那些款項');return}
+    S.accounts=S.accounts.filter(a=>a.id!==b.dataset.delacct);save();render();toast('已刪除帳戶');return}
+});
+document.addEventListener('change',e=>{
+  if(['hFrom','hTo'].includes(e.target.id)){hRange='';renderHistory();return}
+  if(['hSrc','hKind'].includes(e.target.id)){renderHistory();return}
+  const el=e.target;
+  if(el.dataset.acct){const a=acctById(el.dataset.acct); a.balance=Number(el.value)||0; save(); render(); return}
+  if(el.id==='refDate'&&el.value){refDate=el.value;render()}
+});
+hQ.addEventListener('input',renderHistory);
+document.getElementById('btnToday').onclick=()=>{refDate=realToday;render()};
+document.getElementById('btnSim').onclick=e=>{const box=document.getElementById('simBox');box.hidden=!box.hidden;e.currentTarget.setAttribute('aria-expanded',!box.hidden)};
+window.addEventListener('beforeunload',e=>{if(document.getElementById('sync').textContent==='儲存中…'){e.preventDefault();e.returnValue=''}});
+document.getElementById('acctForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  S.accounts.push({id:'a'+uid(),name:aName.value.trim(),type:'bank',no:aNo.value.trim(),balance:Number(aBal.value)||0});
+  e.target.reset();save();render();toast('已新增帳戶');
+});
+document.addEventListener('submit',e=>{
+  const f=e.target.closest('[data-amtform]'); if(!f) return;
+  e.preventDefault(); const v=Number(f.querySelector('input').value);
+  if(!(f.querySelector('input').value!=='' && v>=0)){toast('請輸入本期帳單金額');return}
+  S.amounts[f.dataset.amtform]=v; save(); render(); toast(`已更新帳單金額 ${money(v)}，缺口已重算`);
+});
+function syncVar(){const v=formKind==='recurring'&&fVar.value==='1';fCloseWrap.hidden=!v;fAmtLbl.textContent=v?'預估金額':'金額'}
+fVar.addEventListener('change',syncVar);
+document.getElementById('itemForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const title=fTitle.value.trim(), amount=Number(fAmt.value), method=fMethod.value;
+  if(!title||!(amount>0)) return;
+  if(formKind==='recurring'){
+    const day=Math.min(31,Math.max(1,Number(fDay.value)||1));
+    const it={id:'r'+uid(),kind:'recurring',day,title,amount,method,start:realToday};
+    if(fVar.value==='1'){it.variable=true;it.closeDay=Math.min(31,Math.max(1,Number(fClose.value)||1))}
+    S.items.push(it);
+  }else{
+    if(!fDate.value){toast('請選付款日期');return}
+    S.items.push({id:'o'+uid(),kind:'once',date:fDate.value,title,amount,method});
+  }
+  fTitle.value='';fAmt.value='';save();render();toast(`已加入「${title}」`);
+});
+
+document.getElementById('fDate').value=addDays(realToday,3);
+S=emptyState();
+render();
+syncMsg('讀取中…');
+load().then(d=>{
+  if(d==='error'||d===null) return;   // 讀不到就不允許存，避免用空白蓋掉雲端資料
+  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.items=S.items||[]; S.accounts=S.accounts||[];
+  _loaded=true; syncMsg('已同步'); render();
+});
+</script>
+</body>
+</html>

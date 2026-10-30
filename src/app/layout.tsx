@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "個人財務閉環系統",
-  description: "浮動收入者的現金流預測與決策引擎",
+  title: "現金流管理",
+  description: "現有資金、待付款項與資金缺口追蹤",
 };
 
 export default function RootLayout({
