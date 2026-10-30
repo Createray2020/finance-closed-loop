@@ -209,10 +209,61 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
   .row .act{grid-column:2/-1;justify-self:end}
   .acct{grid-template-columns:minmax(0,1fr) 112px 22px}
 }
+
+/* ---- 導覽：桌機左側欄、手機上方橫向分頁 ---- */
+.app{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100vh}
+.nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;background:var(--surface);border-right:1px solid var(--line);padding:20px 12px;display:flex;flex-direction:column;gap:2px}
+.nav .brand{display:grid;gap:2px;padding:0 10px 16px}
+.nav .brand b{font-size:17px;font-weight:900}
+.nav a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-weight:500}
+.nav a:hover{background:var(--sunk);color:var(--ink)}
+.nav a[aria-current="page"]{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.navsep{font-size:11px;color:var(--muted);letter-spacing:.08em;padding:16px 10px 4px}
+.badge{font-style:normal;font-size:11px;font-family:var(--f-num);border-radius:999px;padding:1px 7px;background:var(--sunk);color:var(--muted);border:1px solid var(--line);white-space:nowrap}
+.badge:empty{display:none}
+.badge.bad{background:var(--bad);color:var(--surface);border-color:transparent}
+.app>.wrap{max-width:1180px;width:100%;margin:0;align-content:start}
+.view{display:grid;gap:20px}
+.band>div[data-go]{cursor:pointer}
+.band>div[data-go]:hover .lbl{color:var(--accent);text-decoration:underline}
+.qlinks{display:grid;gap:0}
+.qlinks a{color:var(--accent);text-decoration:none;padding:8px 0;border-bottom:1px dashed var(--line)}
+.qlinks a:last-child{border-bottom:0}
+.qlinks a:hover{text-decoration:underline}
+.qlinks a::after{content:" →"}
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .nav{z-index:5;height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px max(12px,env(safe-area-inset-left,0px));gap:4px;scrollbar-width:none}
+  .nav .brand,.navsep{display:none}
+  .nav a{white-space:nowrap;padding:7px 12px}
+  .nav{-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent);mask-image:linear-gradient(90deg,#000 85%,transparent);padding-right:40px}
+  /* 手機：總覽以外的分頁，數字列縮成一行，標題收起來 */
+  .app:not(.v-overview) header.top{display:none}
+  .app:not(.v-overview) .band{grid-template-columns:repeat(4,minmax(0,1fr));border-radius:10px}
+  .app:not(.v-overview) .band>div{padding:8px 8px;gap:0;border-top:0!important;border-left:1px solid var(--line)}
+  .app:not(.v-overview) .band>div:first-child{border-left:0}
+  .app:not(.v-overview) .band .sub{display:none}
+  .app:not(.v-overview) .band .lbl{font-size:10px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .app:not(.v-overview) .band .val{font-size:13px}
+  .app:not(.v-overview) .band .gap{border-radius:0 9px 9px 0}
+}
+@media (min-width:901px){header.top h1{display:none}}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="app">
+<nav class="nav" aria-label="功能選單">
+  <div class="brand"><b>現金流管理</b><span class="small muted" id="navSync"></span></div>
+  <a href="#overview" data-v="overview"><span>總覽</span><i class="badge bad" id="bOver" title="逾期筆數"></i></a>
+  <a href="#flow" data-v="flow"><span>資金水位</span><i class="badge" id="bFlow" title="資金可支付到"></i></a>
+  <a href="#ar-ap" data-v="ar-ap"><span>應收／應付</span><i class="badge" id="bLedger"></i></a>
+  <a href="#transfer" data-v="transfer"><span>匯款／提款指示</span></a>
+  <div class="navsep">設定與紀錄</div>
+  <a href="#accounts" data-v="accounts"><span>帳戶與資金</span><i class="badge" id="bAcct"></i></a>
+  <a href="#items" data-v="items"><span>款項設定</span></a>
+  <a href="#records" data-v="records"><span>付款紀錄</span></a>
+</nav>
+<main class="wrap">
   <header class="top">
     <div>
       <h1>現金流管理</h1>
@@ -233,6 +284,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
     <div class="gap" id="sGapBox"><span class="lbl" id="sGapLbl">資金缺口</span><span class="val" id="sGap">–</span><span class="sub" id="sGapSub"></span><span class="sub" id="sGapSub2"></span></div>
   </section>
 
+<div class="view" id="v-overview">
   <div class="cols">
     <div class="stack">
       <section class="panel">
@@ -247,12 +299,37 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
         <div class="bd"><div class="list" id="payList"></div></div>
       </section>
     </div>
-
     <div class="stack">
       <section class="panel remind" id="remind" hidden>
         <div class="hd"><h2>帳單金額待輸入</h2><span class="small muted" id="remindN"></span></div>
         <div class="bd" id="remindList"></div>
       </section>
+      <section class="panel quick">
+        <div class="hd"><h2>快速前往</h2></div>
+        <div class="bd qlinks">
+          <a href="#flow">資金水位：哪一天開始不夠</a>
+          <a href="#transfer">產生匯款／提款指示</a>
+          <a href="#ar-ap">應收／應付帳款</a>
+          <a href="#accounts">更新帳戶餘額</a>
+          <a href="#items">新增款項</a>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="hd"><h2>各付款來源核對</h2><span class="small muted" id="srcHint"></span></div>
+        <div class="bd"><div class="src" id="srcList"></div></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="view" id="v-flow" hidden>
+  <section class="panel level">
+    <div class="hd"><h2>資金水位</h2><span class="small muted" id="levelHint"></span></div>
+    <div class="bd"><div class="tbl"><table id="levelTbl"></table></div></div>
+  </section>
+</div>
+
+<div class="view" id="v-accounts" hidden>
       <section class="panel">
         <div class="hd"><h2>現有資金</h2><span class="small muted">直接改金額即可</span></div>
         <div class="bd">
@@ -268,14 +345,35 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
           </details>
         </div>
       </section>
+</div>
 
-      <section class="panel">
-        <div class="hd"><h2>各付款來源核對</h2><span class="small muted" id="srcHint"></span></div>
-        <div class="bd"><div class="src" id="srcList"></div></div>
-      </section>
+<div class="view" id="v-ar-ap" hidden>
+  <section class="panel" id="ledger">
+    <div class="hd"><h2>應收／應付帳款</h2><span class="small muted">有日期的應付算進缺口；應收只在資金水位標示</span></div>
+    <div class="bd">
+      <div class="hstats" id="ldgStats"></div>
+      <div class="setlist">
+        <div><div class="subhd"><span>應收帳款（別人欠我）</span><span id="ldgARt" class="num"></span></div><div id="ldgAR"></div></div>
+        <div><div class="subhd"><span>應付帳款（我欠別人）</span><span id="ldgAPt" class="num"></span></div><div id="ldgAP"></div></div>
+      </div>
+      <details>
+        <summary class="small muted" style="cursor:pointer">＋ 新增應收／應付</summary>
+        <form class="f" id="ldgForm" style="margin-top:10px">
+          <div class="fld"><label for="lType">類型</label><select id="lType"><option value="ar">應收（別人欠我）</option><option value="ap">應付（我欠別人）</option></select></div>
+          <div class="fld"><label for="lParty">對象</label><input id="lParty" required placeholder="例：王小明"></div>
+          <div class="fld"><label for="lTitle">事由</label><input id="lTitle" required placeholder="例：10月顧問費"></div>
+          <div class="fld"><label for="lAmt">金額</label><input id="lAmt" type="number" min="1" step="1" required></div>
+          <div class="fld"><label for="lDate">預計日期（可空白）</label><input id="lDate" type="date"></div>
+          <div class="fld"><label for="lNote">備註（可空白）</label><input id="lNote" placeholder="例：匯款帳號、聯絡方式"></div>
+          <div class="fld"><button class="primary" type="submit">加入</button></div>
+        </form>
+      </details>
+      <details id="ldgDoneBox" hidden><summary class="small muted" style="cursor:pointer" id="ldgDoneSum"></summary><div id="ldgDone"></div></details>
     </div>
-  </div>
+  </section>
+</div>
 
+<div class="view" id="v-transfer" hidden>
   <section class="panel ins" id="ins">
     <div class="hd"><h2>匯款／提款指示</h2>
       <div class="seg" role="group" aria-label="指示類型">
@@ -309,36 +407,9 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
       </div>
     </div>
   </section>
+</div>
 
-  <section class="panel level">
-    <div class="hd"><h2>資金水位</h2><span class="small muted" id="levelHint"></span></div>
-    <div class="bd"><div class="tbl"><table id="levelTbl"></table></div></div>
-  </section>
-
-  <section class="panel" id="ledger">
-    <div class="hd"><h2>應收／應付帳款</h2><span class="small muted">有日期的應付算進缺口；應收只在資金水位標示</span></div>
-    <div class="bd">
-      <div class="hstats" id="ldgStats"></div>
-      <div class="setlist">
-        <div><div class="subhd"><span>應收帳款（別人欠我）</span><span id="ldgARt" class="num"></span></div><div id="ldgAR"></div></div>
-        <div><div class="subhd"><span>應付帳款（我欠別人）</span><span id="ldgAPt" class="num"></span></div><div id="ldgAP"></div></div>
-      </div>
-      <details>
-        <summary class="small muted" style="cursor:pointer">＋ 新增應收／應付</summary>
-        <form class="f" id="ldgForm" style="margin-top:10px">
-          <div class="fld"><label for="lType">類型</label><select id="lType"><option value="ar">應收（別人欠我）</option><option value="ap">應付（我欠別人）</option></select></div>
-          <div class="fld"><label for="lParty">對象</label><input id="lParty" required placeholder="例：王小明"></div>
-          <div class="fld"><label for="lTitle">事由</label><input id="lTitle" required placeholder="例：10月顧問費"></div>
-          <div class="fld"><label for="lAmt">金額</label><input id="lAmt" type="number" min="1" step="1" required></div>
-          <div class="fld"><label for="lDate">預計日期（可空白）</label><input id="lDate" type="date"></div>
-          <div class="fld"><label for="lNote">備註（可空白）</label><input id="lNote" placeholder="例：匯款帳號、聯絡方式"></div>
-          <div class="fld"><button class="primary" type="submit">加入</button></div>
-        </form>
-      </details>
-      <details id="ldgDoneBox" hidden><summary class="small muted" style="cursor:pointer" id="ldgDoneSum"></summary><div id="ldgDone"></div></details>
-    </div>
-  </section>
-
+<div class="view" id="v-items" hidden>
   <section class="panel">
     <div class="hd"><h2>款項設定</h2><span class="small muted">常態型自動每月產生；臨時款項只出現一次</span></div>
     <div class="bd">
@@ -371,7 +442,9 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
       </div>
     </div>
   </section>
+</div>
 
+<div class="view" id="v-records" hidden>
   <section class="panel" id="history">
     <div class="hd"><h2>付款紀錄</h2><span class="small muted" id="hSum"></span></div>
     <div class="bd">
@@ -393,8 +466,9 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
     </div>
   </section>
 </div>
+</main>
+</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
 <script>
 const pad=n=>String(n).padStart(2,'0');
 const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -490,7 +564,7 @@ function render(){
   if(failDay==='over'){set('sGap','已不足');set('sGapSub',`連逾期款項都付不完，還差 ${money(short)}`)}
   else if(failDay===refDate){set('sGap','今天就不夠');set('sGapSub',`今天的「${failItems.map(o=>o.item.title).join('、')}」還差 ${money(short)}`)}
   else if(failDay){const last=addDays(failDay,-1);set('sGap',`${md(last)}（${wd(last)}）`);
-    set('sGapSub',`${md(failDay)} 的「${failItems.map(o=>o.item.title).join('、')}」開始付不出，差 ${money(short)}`)}
+    set('sGapSub',`${md(failDay)} 的${failItems.length>2?` ${failItems.length} 筆款項`:`「${failItems.map(o=>o.item.title).join('、')}」`}開始付不出，差 ${money(short)}`)}
   else{set('sGap',`${md(horizon)} 之後`);set('sGapSub',`未來 ${HZ} 天的款項都付得起，付完還剩 ${money(run)}`)}
   set('sGapSub2',gap>0?`${winName[win]}缺口 ${money(gap)}`:`${winName[win]}付完還剩 ${money(-gap)}`);
 
@@ -944,6 +1018,26 @@ load().then(d=>{
   S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.items=S.items||[]; S.accounts=S.accounts||[];
   _loaded=true; syncMsg('已同步'); render();
 });
+
+// ---- 導覽與快速連結 ----
+const VIEWS=['overview','flow','accounts','ar-ap','transfer','items','records'];
+function showView(){
+  const v=VIEWS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
+  VIEWS.forEach(x=>document.getElementById('v-'+x).hidden=x!==v);
+  const app=document.querySelector('.app'); VIEWS.forEach(x=>app.classList.toggle('v-'+x,x===v));
+  document.querySelectorAll('.nav a').forEach(a=>{if(a.dataset.v===v)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
+  window.scrollTo(0,0);
+}
+window.addEventListener('hashchange',showView);
+function navBadges(){
+  const C=compute(); set('bOver',C.overdue.length||'');
+  set('bLedger',(S.ledger||[]).filter(e=>e.remaining>0).length||'');
+  set('bFlow',document.getElementById('sGap').textContent.replace(/（.*）/,''));
+  set('bAcct',S.accounts.length); set('navSync',document.getElementById('sync').textContent);
+}
+const _render=render; render=function(){_render();navBadges();};
+document.querySelectorAll('.band>div').forEach((d,i)=>{const to=['accounts','overview',null,'flow'][i]; if(to){d.dataset.go=to;d.addEventListener('click',()=>{location.hash=to})}});
+showView();
 </script>
 </body>
 </html>
