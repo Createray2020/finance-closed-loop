@@ -127,7 +127,9 @@ td.inflow{color:var(--good)}
 tr.arrow td{color:var(--muted)}
 .lrow .amt{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;text-align:right;white-space:nowrap}
 .lrow .act{display:flex;gap:4px;align-items:center}
-.lrow.done{opacity:.6}
+.lrow.done{opacity:.75}
+.llogs{margin-top:6px;border-left:2px solid var(--line);padding-left:8px;display:grid;gap:2px}
+.llog{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;font-size:12px;color:var(--muted)}
 .hstat.pos b{color:var(--good)} .hstat.neg b{color:var(--bad)}
 .insgrid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:20px;align-items:start}
 .inspick,.insout{display:grid;gap:10px;min-width:0}
@@ -616,7 +618,7 @@ function renderHistory(){
 }
 
 // 應收／應付帳款（沒有日期，不進缺口）
-let ldgAct=null, ldgDel=null, ldgDateEdit=null;
+let ldgAct=null, ldgDel=null, ldgDateEdit=null, ldgUndo=null;
 const ldgSort=(a,b)=>{const ka=a.date||'9999', kb=b.date||'9999'; return ka<kb?-1:ka>kb?1:0};
 function ldgRow(e){
   const done=e.remaining<=0, isAR=e.type==='ar', moved=e.amount-e.remaining;
@@ -636,7 +638,12 @@ function ldgRow(e){
   const act=done?'<span class="chip">已結清</span>':ldgAct===e.id?'':`<button class="pay" type="button" data-lact="${e.id}">${verb}</button>`;
   const del=ldgDel===e.id?`<button class="undo" type="button" data-ldel="${e.id}" style="color:var(--bad);font-weight:700">確定刪除，不入帳</button><button class="undo" type="button" data-ldelno="1">取消</button>`
     :`<button class="ghost small" type="button" data-ldel="${e.id}" aria-label="刪除 ${esc(e.title)}" title="${isAR?'這筆不會收到了，刪除且不入帳':'這筆不用付了，刪除且不出帳'}">刪除</button>`;
-  return `<div class="lrow ${done?'done':''}"><div style="min-width:0"><b>${esc(e.party)}</b>・${esc(e.title)}<div class="meta" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">${done?'':dateChip}${!done?`<button class="undo" type="button" data-ledate="${e.id}">${e.date?'改日期':'設日期'}</button>`:''}</div>${meta?`<div class="small muted">${meta}</div>`:''}</div>
+  const sName=id=>{const a=acctById(id);return a?(a.type==='cash'?'現金部位':a.name):'已刪除帳戶'};
+  const logs=(e.log||[]).map((l,i)=>{const k=`${e.id}|${i}`;
+    return `<div class="llog"><span class="num">${md(l.on)}</span><span>${isAR?'收':'付'} ${money(l.amount)}・${isAR?'進':'從'}${esc(sName(l.acct))}</span>${ldgUndo===k
+      ?`<span><button class="undo" type="button" data-lundo="${k}" style="color:var(--bad);font-weight:700">確定取消，${isAR?'從帳戶扣回':'退回帳戶'}</button> <button class="undo" type="button" data-lundono="1">不取消</button></span>`
+      :`<button class="undo" type="button" data-lundo="${k}">取消這次${isAR?'收款':'付款'}</button>`}</div>`}).join('');
+  return `<div class="lrow ${done?'done':''}"><div style="min-width:0"><b>${esc(e.party)}</b>・${esc(e.title)}<div class="meta" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">${done?'':dateChip}${!done?`<button class="undo" type="button" data-ledate="${e.id}">${e.date?'改日期':'設日期'}</button>`:''}</div>${meta?`<div class="small muted">${meta}</div>`:''}${logs?`<div class="llogs"><div class="small muted">${isAR?'收款':'付款'}紀錄</div>${logs}</div>`:''}</div>
     <div class="amt">${money(done?e.amount:e.remaining)}</div><div class="act">${act}${del}</div>${box}${dateEdit}</div>`;
 }
 function renderLedger(){
@@ -833,6 +840,15 @@ document.addEventListener('click',e=>{
     e.date=b.dataset.ldclear?'':(document.getElementById('ldgDateIn').value||'');ldgDateEdit=null;save();render();toast(e.date?`預計日期設為 ${md(e.date)}`:'已改成未定日期');return}
   if(b.dataset.lact){ldgAct=b.dataset.lact;ldgDel=null;render();return}
   if(b.dataset.lcancel){ldgAct=null;render();return}
+  if(b.dataset.lundono){ldgUndo=null;render();return}
+  if(b.dataset.lundo){const k=b.dataset.lundo;
+    if(ldgUndo!==k){ldgUndo=k;render();return}
+    const [eid,idx]=k.split('|'); const e=(S.ledger||[]).find(x=>x.id===eid); const l=e&&e.log&&e.log[Number(idx)]; if(!l){ldgUndo=null;render();return}
+    const a=acctById(l.acct);
+    if(e.type==='ar'){ if(a) a.balance=Number(a.balance)-l.amount; }
+    else{ if(a) a.balance=Number(a.balance)+l.amount; if(l.key) delete S.paid[l.key]; }
+    e.remaining=Math.min(e.amount,e.remaining+l.amount); e.log.splice(Number(idx),1);
+    ldgUndo=null;save();render();toast(`已取消，${e.type==='ar'?'帳戶扣回':'退回帳戶'} ${money(l.amount)}，${e.party} 剩 ${money(e.remaining)}`);return}
   if(b.dataset.ldelno){ldgDel=null;render();return}
   if(b.dataset.ldel){const id=b.dataset.ldel;
     if(ldgDel!==id){ldgDel=id;render();return}
