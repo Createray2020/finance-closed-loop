@@ -286,6 +286,9 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
           <div class="hfilters">
             <div class="fld"><label for="insFrom" id="insFromLbl">出款帳戶</label><select id="insFrom"></select></div>
             <div class="fld"><label for="insDate">辦理日期</label><input id="insDate" type="date"></div>
+            <div class="fld remitonly"><span class="small muted" style="font-size:12px">匯款方式</span><div class="seg" role="group" aria-label="匯款方式">
+              <button type="button" data-chan="counter" aria-pressed="true">現場臨櫃</button>
+              <button type="button" data-chan="online" aria-pressed="false">網路銀行</button></div></div>
           </div>
           <div class="subhd"><span>勾選要處理的款項（逾期＋未來 30 天）</span><button class="undo" type="button" id="insClear">全部取消</button></div>
           <div id="insList"></div>
@@ -650,7 +653,7 @@ function renderLedger(){
 }
 
 // 匯款／提款指示
-let insMode='remit', insSel=new Set(), insManual=[], pEdit=null, insPayee={};
+let insChan='counter', insMode='remit', insSel=new Set(), insManual=[], pEdit=null, insPayee={};
 const payeeStr=p=>p?[p.bank,p.name,p.acct].filter(Boolean).join('・'):'';
 // 常用收款帳戶：存過的收款資訊，之後可以直接選
 function rememberPayee(p){
@@ -678,6 +681,7 @@ function insCandidates(){
 function renderIns(){
   const box=document.getElementById('ins'); box.classList.toggle('wd',insMode==='withdraw');
   document.querySelectorAll('[data-ins]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.ins===insMode));
+  document.querySelectorAll('[data-chan]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.chan===insChan));
   set('insFromLbl',insMode==='remit'?'出款帳戶':'提領帳戶');
   const sel=insFrom, cur=sel.value;
   const banks=S.accounts.filter(a=>a.type==='bank');
@@ -717,7 +721,8 @@ function updateInsText(){
   const bankName=a?a.name.split(/[・ ]/)[0]:'銀行';
   let t='';
   if(insMode==='remit'){
-    t+=`【匯款指示】${md(d)}（${wd(d)}）\n\n請至${bankName}臨櫃辦理匯款。\n出款帳戶：${acctLine}\n共 ${lines.length} 筆，合計 ${nt(total)}\n`;
+    const online=insChan==='online';
+    t+=`【匯款指示・${online?'網路銀行':'現場臨櫃'}】${md(d)}（${wd(d)}）\n\n${online?`請登入${bankName}網路銀行（或行動銀行 App）轉帳。`:`請至${bankName}臨櫃辦理匯款，記得帶存摺和印章。${[0,6].includes(parse(d).getDay())?'\n（這天是週末，銀行臨櫃沒有營業，請改到平日辦理。）':''}`}\n出款帳戶：${acctLine}\n共 ${lines.length} 筆，合計 ${nt(total)}\n`;
     lines.forEach((l,i)=>{const p=l.payee||{};
       t+=`\n${i+1}. ${l.title}${l.due?`（${l.due<d?'已逾期，':''}到期 ${md(l.due)}）`:''}\n`;
       t+=`   收款銀行：${p.bank||'（未提供，請先跟我確認）'}\n`;
@@ -725,7 +730,9 @@ function updateInsText(){
       t+=`   帳號：${p.acct||'（未提供，請先跟我確認）'}\n`;
       if(!p.bank&&!p.acct&&l.note) t+=`   備註：${l.note}\n`;
       t+=`   金額：${nt(l.amount)}${l.est?'（預估，請先跟我確認實際金額）':''}\n`;});
-    t+=`\n辦理時請注意：\n・每一筆送出前，再核對一次帳號和金額\n・有標「請先跟我確認」的那筆，先不要匯\n・辦完把每張匯款收據拍照回傳給我`;
+    t+=online
+      ?`\n轉帳時請注意：\n・收款銀行請選對銀行代碼，帳號逐碼核對後再送出\n・附言／備註欄填上款項名稱，方便對方對帳\n・非約定帳戶有單筆和單日轉帳上限，超過時先跟我說，改臨櫃或分天轉\n・有標「請先跟我確認」的那筆，先不要轉\n・每筆轉完把成功畫面截圖回傳給我`
+      :`\n辦理時請注意：\n・每一張匯款單填完，再核對一次帳號和金額\n・有標「請先跟我確認」的那筆，先不要匯\n・辦完把每張匯款收據拍照回傳給我`;
   }else{
     t+=`【提款指示】${md(d)}（${wd(d)}）\n\n請從以下帳戶提領現金：\n提領帳戶：${acctLine}\n提領金額：${nt(total)}\n\n用途：\n`;
     lines.forEach((l,i)=>{t+=`${i+1}. ${l.title}　${nt(l.amount)}${l.due?`（到期 ${md(l.due)}）`:''}${l.est?'（預估）':''}\n`;});
@@ -805,6 +812,7 @@ document.addEventListener('click',e=>{
     if(o.item.variable) S.amounts[o.key]=amt;
     payingKey=null;save();render();toast(`${o.item.title} 已付，${a.type==='cash'?'現金部位':a.name} 扣 ${money(amt)}`);return}
   if(b.dataset.ins){insMode=b.dataset.ins;renderIns();return}
+  if(b.dataset.chan){insChan=b.dataset.chan;renderIns();return}
   if(b.id==='insClear'){insSel.clear();renderIns();return}
   if(b.id==='insAdd'){insManual.push({title:'',bank:'',name:'',acct:'',amount:''});insManual_render();updateInsText();return}
   if(b.dataset.imdel){insManual.splice(Number(b.dataset.imdel),1);insManual_render();updateInsText();return}
