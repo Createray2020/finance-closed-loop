@@ -236,6 +236,9 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
 .qlinks a:last-child{border-bottom:0}
 .qlinks a:hover{text-decoration:underline}
 .qlinks a::after{content:" →"}
+.enttabs{justify-self:start;max-width:100%;overflow-x:auto}
+.enttabs button{font-weight:700}
+.acct{grid-template-columns:minmax(0,1fr) 140px 26px}
 @media (max-width:900px){
   .app{grid-template-columns:minmax(0,1fr)}
   .nav{z-index:5;height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px max(12px,env(safe-area-inset-left,0px));gap:4px;scrollbar-width:none}
@@ -269,6 +272,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
   <a href="#records" data-v="records"><span>付款紀錄</span></a>
 </nav>
 <main class="wrap">
+  <div class="seg enttabs" id="entTabs" role="group" aria-label="帳本"></div>
   <header class="top">
     <div>
       <h1>現金流管理</h1>
@@ -352,6 +356,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
               <div class="fld"><label for="aName">名稱</label><input id="aName" required placeholder="例：中信 數位帳戶"></div>
               <div class="fld"><label for="aNo">帳號末四碼</label><input id="aNo" maxlength="4" inputmode="numeric" placeholder="例：3456"></div>
               <div class="fld"><label for="aBal">目前餘額</label><input id="aBal" type="number" min="0" step="1" required></div>
+              <div class="fld"><label for="aEnt">所屬帳本</label><select id="aEnt"></select></div>
               <div class="fld"><button class="primary" type="submit">新增帳戶</button></div>
             </form>
           </details>
@@ -377,6 +382,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
           <div class="fld"><label for="lAmt">金額</label><input id="lAmt" type="number" min="1" step="1" required></div>
           <div class="fld"><label for="lDate">預計日期（可空白）</label><input id="lDate" type="date"></div>
           <div class="fld"><label for="lPrio">付款優先等級（應付用）</label><select id="lPrio"></select></div>
+          <div class="fld"><label for="lEnt">所屬帳本</label><select id="lEnt"></select></div>
           <div class="fld"><label for="lNote">備註（可空白）</label><input id="lNote" placeholder="例：匯款帳號、聯絡方式"></div>
           <div class="fld"><button class="primary" type="submit">加入</button></div>
         </form>
@@ -448,6 +454,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
         <div class="fld"><label for="fAmt" id="fAmtLbl">金額</label><input id="fAmt" type="number" min="1" step="1" required></div>
         <div class="fld"><label for="fMethod">付款方式</label><select id="fMethod"></select></div>
         <div class="fld"><label for="fPrio">付款優先等級</label><select id="fPrio">${''}</select></div>
+        <div class="fld"><label for="fEnt">所屬帳本</label><select id="fEnt"></select></div>
         <div class="fld"><label for="fPick">常用收款帳戶</label><select id="fPick"></select></div>
         <div class="fld"><label for="fPBank">收款銀行（可空白）</label><input id="fPBank" placeholder="例：國泰世華 中壢分行"></div>
         <div class="fld"><label for="fPName">收款戶名（可空白）</label><input id="fPName" placeholder="例：王小明"></div>
@@ -522,9 +529,22 @@ function closingFor(due,closeDay){
   if(!(closeDay<d.getDate())){m--; if(m<0){m=11;y--}}
   return ymd(new Date(y,m,Math.min(closeDay,new Date(y,m+1,0).getDate())));
 }
+// 帳本：每筆帳戶／款項／帳款歸屬一個帳本，上方分頁可切「全部／單一帳本」
+const ents=()=>S.entities||[];
+const entOf=x=>(x&&x.ent)||((ents()[0]||{}).id||'');
+const inScope=x=>scope==='all'||entOf(x)===scope;
+const scopedAccounts=()=>S.accounts.filter(inScope);
+const scopedLedger=()=>(S.ledger||[]).filter(inScope);
+const entName=id=>(ents().find(e=>e.id===id)||{}).name||'未指定';
+const entSel=(v,attr)=>`<select class="prsel" ${attr} aria-label="所屬帳本">${ents().map(e=>`<option value="${e.id}" ${e.id===v?'selected':''}>${esc(e.name)}</option>`).join('')}</select>`;
+function renderEntTabs(){
+  const box=document.getElementById('entTabs');
+  box.innerHTML=`<button type="button" data-scope="all" aria-pressed="${scope==='all'}">全部加總</button>`+
+    ents().map(e=>`<button type="button" data-scope="${e.id}" aria-pressed="${scope===e.id}">${esc(e.name)}</button>`).join('');
+}
 function occurrences(s,until){
   const out=[];
-  for(const it of s.items){
+  for(const it of (s.items||[]).filter(inScope)){
     if(it.kind==='once'){ out.push({key:it.id+'|'+it.date,item:it,due:it.date,amount:it.amount}); continue; }
     const st=parse(it.start); let y=st.getFullYear(), m=st.getMonth();
     for(let guard=0;guard<120;guard++){
@@ -557,11 +577,11 @@ const addMonths=(s,n)=>{const d=parse(s);d.setMonth(d.getMonth()+n);return ymd(d
 function reserveCalc(){
   const N=Number((S.settings||{}).reserveMonths||3), until=addMonths(refDate,N);
   const list=occurrences(S,until).concat(ledgerOcc(until)).filter(o=>!S.paid[o.key]&&prioOf(o)===0).sort(byDuePrio);
-  const need=list.reduce((t,o)=>t+o.amount,0), funds=S.accounts.reduce((t,a)=>t+Number(a.balance||0),0);
+  const need=list.reduce((t,o)=>t+o.amount,0), funds=scopedAccounts().reduce((t,a)=>t+Number(a.balance||0),0);
   return {N,until,list,need,funds,avail:funds-need};
 }
 function ledgerOcc(until){
-  return (S.ledger||[]).filter(e=>e.type==='ap'&&e.remaining>0&&e.date&&e.date<=until)
+  return scopedLedger().filter(e=>e.type==='ap'&&e.remaining>0&&e.date&&e.date<=until)
     .map(e=>({key:'L|'+e.id,ledger:e.id,item:{id:e.id,kind:'ap',title:`${e.party}・${e.title}`,method:null,prio:e.prio!=null?e.prio:9},due:e.date,amount:e.remaining}));
 }
 const winDays={day:1,week:7,month:30};
@@ -575,7 +595,7 @@ function compute(){
   const overdue=all.filter(o=>!o.paid&&o.due<refDate).sort(byDuePrio);
   const inWin=all.filter(o=>o.due>=refDate&&o.due<=end).sort(byDuePrio);
   const unpaidWin=inWin.filter(o=>!o.paid);
-  const funds=S.accounts.reduce((t,a)=>t+Number(a.balance||0),0);
+  const funds=scopedAccounts().reduce((t,a)=>t+Number(a.balance||0),0);
   const sum=l=>l.reduce((t,o)=>t+o.amount,0);
   return {end,overdue,inWin,unpaidWin,funds,overSum:sum(overdue),winSum:sum(unpaidWin)};
 }
@@ -649,8 +669,8 @@ function render(){
   set('levelHint',firstNeg?`付到「${firstNeg.item.title}」${firstNeg.due<refDate?'':'（'+md(firstNeg.due)+'）'}時資金開始不夠`:'範圍內資金都撐得住');
 
   // 帳戶
-  const cashA=S.accounts.filter(a=>a.type==='cash'), bankA=S.accounts.filter(a=>a.type==='bank');
-  const aRow=a=>`<div class="acct"><div class="nm"><b>${esc(a.name)}</b>${a.no?`<div class="small muted num">****${esc(a.no)}</div>`:''}</div>
+  const cashA=scopedAccounts().filter(a=>a.type==='cash'), bankA=scopedAccounts().filter(a=>a.type==='bank');
+  const aRow=a=>`<div class="acct"><div class="nm"><b>${esc(a.name)}</b>${a.no?`<div class="small muted num">****${esc(a.no)}</div>`:''}<div style="margin-top:2px">${entSel(entOf(a),`data-aent="${a.id}"`)}</div></div>
     <input type="number" step="1" id="bal-${a.id}" data-acct="${a.id}" value="${a.balance}" aria-label="${esc(a.name)} 餘額">
     ${a.type==='cash'?'<span></span>':`<button class="x" type="button" data-delacct="${a.id}" aria-label="刪除 ${esc(a.name)}">×</button>`}</div>`;
   document.getElementById('acctList').innerHTML=
@@ -660,7 +680,7 @@ function render(){
 
   // 各來源核對
   set('srcHint',`逾期＋${winName[win]}`);
-  document.getElementById('srcList').innerHTML=S.accounts.map(a=>{
+  document.getElementById('srcList').innerHTML=scopedAccounts().map(a=>{
     const due=q.filter(o=>o.item.method===a.id).reduce((t,o)=>t+o.amount,0);
     const diff=Number(a.balance)-due, short=diff<0;
     const pct=due?Math.min(100,due/Math.max(1,Number(a.balance))*100):0;
@@ -679,17 +699,20 @@ function render(){
   renderHistory();
   renderLedger();
   renderReserve();
+  renderEntTabs();
+  const eopt=ents().map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  ['fEnt','lEnt','aEnt'].forEach(id=>{const el=document.getElementById(id); if(el){const v=el.value; el.innerHTML=eopt; el.value=(scope!=='all'&&ents().some(x=>x.id===scope))?scope:(ents().some(x=>x.id===v)?v:(ents()[0]||{}).id||'')}});
   renderPayeeBook();
   renderIns();
   // 款項設定
   const sel=document.getElementById('fMethod'), cur=sel.value;
-  sel.innerHTML=S.accounts.map(a=>`<option value="${a.id}">${esc(methodLabel(a.id))}</option>`).join('');
+  sel.innerHTML=scopedAccounts().map(a=>`<option value="${a.id}">${esc(methodLabel(a.id))}</option>`).join('');
   if(S.accounts.some(a=>a.id===cur)) sel.value=cur;
-  const rec=S.items.filter(i=>i.kind==='recurring').sort((a,b)=>a.day-b.day);
-  const once=S.items.filter(i=>i.kind==='once'&&!S.paid[i.id+'|'+i.date]).sort((a,b)=>a.date<b.date?-1:1);
+  const rec=S.items.filter(i=>inScope(i)&&i.kind==='recurring').sort((a,b)=>a.day-b.day);
+  const once=S.items.filter(i=>inScope(i)&&i.kind==='once'&&!S.paid[i.id+'|'+i.date]).sort((a,b)=>a.date<b.date?-1:1);
   set('recTotal','每月固定 '+money(rec.filter(i=>!i.months).reduce((t,i)=>t+i.amount,0)));
   set('onceTotal',money(once.reduce((t,i)=>t+i.amount,0)));
-  const sRow=(i,lbl)=>`<div class="setrow"><span class="num">${lbl}</span><div style="min-width:0"><div>${esc(i.title)}</div><div style="margin:2px 0">${prioSel(prioOf(i),`data-prio="${i.id}"`)}</div><div class="small muted">${esc(methodLabel(i.method))}</div>
+  const sRow=(i,lbl)=>`<div class="setrow"><span class="num">${lbl}</span><div style="min-width:0"><div>${esc(i.title)}</div><div style="margin:2px 0;display:flex;gap:4px;flex-wrap:wrap">${prioSel(prioOf(i),`data-prio="${i.id}"`)}${entSel(entOf(i),`data-ient="${i.id}"`)}</div><div class="small muted">${esc(methodLabel(i.method))}</div>
     <div class="small ${payeeStr(i.payee)?'muted':''}">${payeeStr(i.payee)?'收款：'+esc(payeeStr(i.payee)):''} <button class="undo" type="button" data-pedit="${i.id}">${payeeStr(i.payee)?'改收款資訊':'加收款資訊'}</button></div></div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}</span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button>${pEdit===i.id?`<div class="payeeedit">
       <div class="fld"><label for="pePick">常用收款帳戶</label><select id="pePick">${payeeOpts()}</select></div>
       <div class="fld"><label for="peBank">收款銀行</label><input id="peBank" value="${esc(i.payee?.bank||'')}"></div>
@@ -720,7 +743,7 @@ function renderHistory(){
   const recs=Object.entries(S.paid).map(([key,p])=>{
     const [itemId,due]=key.split('|'); const it=S.items.find(i=>i.id===itemId);
     return {key,...p,due:p.due||due,title:p.title||(it?it.title:'（已刪除款項）'),kind:p.kind||(it?it.kind:''),planned:it?(it.variable?(S.amounts[key]??null):it.amount):null};
-  }).filter(r=>(!f||r.on>=f)&&(!to||r.on<=to)&&(!src||r.source===src)&&(!kind||r.kind===kind)&&(!q||r.title.includes(q)))
+  }).filter(r=>(scope==='all'||(r.ent||entOf(S.items.find(i=>i.id===r.key.split('|')[0])))===scope)).filter(r=>(!f||r.on>=f)&&(!to||r.on<=to)&&(!src||r.source===src)&&(!kind||r.kind===kind)&&(!q||r.title.includes(q)))
     .sort((a,b)=>a.on<b.on?1:a.on>b.on?-1:(a.due<b.due?1:-1));
   const total=recs.reduce((t,r)=>t+r.amount,0), lateN=recs.filter(r=>r.on>r.due).length;
   const bySrc={}; recs.forEach(r=>bySrc[r.source]=(bySrc[r.source]||0)+r.amount);
@@ -738,6 +761,7 @@ function renderHistory(){
 }
 
 // 應收／應付帳款（沒有日期，不進缺口）
+let scope='all';
 let ldgAct=null, ldgDel=null, ldgDateEdit=null, ldgUndo=null;
 const ldgSort=(a,b)=>{const ka=a.date||'9999', kb=b.date||'9999'; return ka<kb?-1:ka>kb?1:0};
 function ldgRow(e){
@@ -750,7 +774,7 @@ function ldgRow(e){
   const meta=[e.note?esc(e.note):'',`建立 ${md(e.created)}`,moved>0?`原 ${money(e.amount)}，已${isAR?'收':'付'} ${money(moved)}`:''].filter(Boolean).join('・');
   const def=(S.accounts.find(a=>a.type==='bank'&&Number(a.balance)>0)||S.accounts[0]||{}).id;
   const box=ldgAct===e.id&&!done?`<div class="paybox"><div class="ttl">${isAR?'錢收進哪個帳戶？':'從哪裡出帳？'}</div>
-    <div class="srcopts">${S.accounts.map(a=>{const after=Number(a.balance)+(isAR?1:-1)*e.remaining;return `<label class="srcopt"><input type="radio" name="ldgsrc" value="${a.id}" ${a.id===def?'checked':''}>
+    <div class="srcopts">${scopedAccounts().map(a=>{const after=Number(a.balance)+(isAR?1:-1)*e.remaining;return `<label class="srcopt"><input type="radio" name="ldgsrc" value="${a.id}" ${a.id===def?'checked':''}>
       <span><b>${a.type==='cash'?'現金部位':esc(a.name)}</b><span class="after ${after<0?'neg':''}">${money(a.balance)} → ${after<0?'−'+money(-after):money(after)}</span></span></label>`}).join('')}</div>
     <div class="payfields"><div class="fld"><label for="ldgAmt">本次${isAR?'收到':'支付'}金額</label><input id="ldgAmt" type="number" min="1" max="${e.remaining}" step="1" value="${e.remaining}"></div>
       <div class="fld"><label for="ldgOn">日期</label><input id="ldgOn" type="date" value="${realToday}"></div>
@@ -774,8 +798,8 @@ function renderReserve(){
   resList.innerHTML=R.list.map(o=>`<div class="llog" style="justify-content:space-between"><span class="num">${o.due<refDate?'逾期':md(o.due)}</span><span style="flex:1">${esc(o.item.title)}${o.est?'（預估）':''}</span><span class="num">${money(o.amount)}</span></div>`).join('')||'<div class="empty">沒有絕對級款項</div>';
 }
 function renderLedger(){
-  const L=S.ledger||[], open=t=>L.filter(e=>e.type===t&&e.remaining>0), sum=l=>l.reduce((t,e)=>t+e.remaining,0);
-  const ar=open('ar'), ap=open('ap'), funds=S.accounts.reduce((t,a)=>t+Number(a.balance||0),0), net=funds+sum(ar)-sum(ap);
+  const L=scopedLedger(), open=t=>L.filter(e=>e.type===t&&e.remaining>0), sum=l=>l.reduce((t,e)=>t+e.remaining,0);
+  const ar=open('ar'), ap=open('ap'), funds=scopedAccounts().reduce((t,a)=>t+Number(a.balance||0),0), net=funds+sum(ar)-sum(ap);
   ldgStats.innerHTML=`<span class="hstat">應收合計<b>${money(sum(ar))}</b></span><span class="hstat">應付合計<b>${money(sum(ap))}</b></span>
     <span class="hstat ${net<0?'neg':'pos'}">淨部位（現有資金＋應收－應付）<b>${net<0?'−'+money(-net):money(net)}</b></span>`;
   set('ldgARt',money(sum(ar))); set('ldgAPt',money(sum(ap)));
@@ -821,7 +845,7 @@ function renderIns(){
   insVia_el().innerHTML='<option value="">不經代辦人（直接匯給收款人）</option>'+(S.payees||[]).map(x=>`<option value="${x.id}" ${x.id===insVia?'selected':''}>${esc(payeeStr(x))}</option>`).join('');
   set('insFromLbl',insMode==='remit'?'出款帳戶':'提領帳戶');
   const sel=insFrom, cur=sel.value;
-  const banks=S.accounts.filter(a=>a.type==='bank');
+  const banks=scopedAccounts().filter(a=>a.type==='bank');
   sel.innerHTML=banks.map(a=>`<option value="${a.id}">${esc(a.name)}${a.no?' ****'+esc(a.no):''}（餘額 ${money(a.balance)}）</option>`).join('');
   sel.value=banks.some(a=>a.id===cur)?cur:(banks.find(a=>Number(a.balance)>0)||banks[0]||{}).id||'';
   if(!insDate.value) insDate.value=realToday;
@@ -910,7 +934,7 @@ function rowHTML(o,state){
   const act=o.ledger?`<button class="pay" type="button" data-lgo="${o.ledger}">去付款</button>`:o.paid?`<button class="undo" type="button" data-undo="${o.key}">取消已付</button>`:open?'':`<button class="pay" type="button" data-pay="${o.key}">標記已付</button>`;
   const R=open&&prioOf(o)!==0?reserveCalc():null, rShort=R?R.need-(R.funds-o.amount):0;
   const box=open?`<div class="paybox">${R&&rShort>0?`<div class="reswarn">提醒：這筆不是「絕對」級。付完後資金比預備金（${R.N} 個月內絕對級 ${money(R.need)}）少 ${money(rShort)}，絕對級款項可能會付不出來。還是可以付。</div>`:''}<div class="ttl">從哪裡出帳？預設是款項設定的付款方式，可以改選</div>
-    <div class="srcopts">${S.accounts.map(a=>{const after=Number(a.balance)-o.amount;return `<label class="srcopt"><input type="radio" name="paysrc" value="${a.id}" ${a.id===it.method?'checked':''}>
+    <div class="srcopts">${scopedAccounts().map(a=>{const after=Number(a.balance)-o.amount;return `<label class="srcopt"><input type="radio" name="paysrc" value="${a.id}" ${a.id===it.method?'checked':''}>
       <span><b>${a.type==='cash'?'現金部位':esc(a.name)}${a.no?` <span class="small muted num">****${esc(a.no)}</span>`:''}</b>
       <span class="after ${after<0?'neg':''}">${money(a.balance)} → ${after<0?'−'+money(-after):money(after)}</span>${a.id===it.method?' <span class="def">預設</span>':''}</span></label>`}).join('')}</div>
     <div class="payfields"><div class="fld"><label for="payAmt">實付金額</label><input id="payAmt" type="number" min="1" step="1" value="${o.amount}"></div>
@@ -924,7 +948,7 @@ function rowHTML(o,state){
 function set(id,v){document.getElementById(id).textContent=v}
 // 持久化：存到 /api/state（Neon，每位使用者一份）
 const APP='cashflow-v1';
-const emptyState=()=>({app:APP,accounts:[{id:'cash',name:'現金部位',type:'cash',no:'',balance:0}],items:[],paid:{},amounts:{},ledger:[]});
+const emptyState=()=>({app:APP,entities:[{id:'e1',name:'創造共好'}],accounts:[{id:'cash',ent:'e1',name:'現金部位',type:'cash',no:'',balance:0}],items:[],paid:{},amounts:{},ledger:[],payees:[],settings:{reserveMonths:3}});
 let _loaded=false, _saveT=null, _saving=Promise.resolve();
 function syncMsg(t,err){const el=document.getElementById('sync');el.textContent=t;el.classList.toggle('err',!!err)}
 function save(){
@@ -967,9 +991,10 @@ document.addEventListener('click',e=>{
     if(!a){toast('請選出帳的帳戶或現金部位');return}
     if(!(amt>0)){toast('實付金額要大於 0');return}
     a.balance=Number(a.balance)-amt;
-    S.paid[o.key]={on,source:src,amount:amt,title:o.item.title,kind:o.item.kind};
+    S.paid[o.key]={on,source:src,amount:amt,title:o.item.title,kind:o.item.kind,ent:entOf(o.ledger?(S.ledger||[]).find(x=>x.id===o.ledger):S.items.find(i=>i.id===o.item.id))};
     if(o.item.variable) S.amounts[o.key]=amt;
     payingKey=null;save();render();toast(`${o.item.title} 已付，${a.type==='cash'?'現金部位':a.name} 扣 ${money(amt)}`);return}
+  if(b.dataset.scope){scope=b.dataset.scope;S.settings=S.settings||{};S.settings.scope=scope;save();render();return}
   if(b.dataset.ins){insMode=b.dataset.ins;renderIns();return}
   if(b.dataset.chan){insChan=b.dataset.chan;renderIns();return}
   if(b.id==='insClear'){insSel.clear();renderIns();return}
@@ -1016,7 +1041,7 @@ document.addEventListener('click',e=>{
     e.remaining-=amt; e.log=e.log||[];
     if(e.type==='ar'){a.balance=Number(a.balance)+amt; e.log.push({on,acct:src,amount:amt});}
     else{a.balance=Number(a.balance)-amt; const key=`${e.id}|${on}|${uid()}`;
-      S.paid[key]={on,due:on,source:src,amount:amt,title:`${e.party}・${e.title}`,kind:'ap',ledgerId:e.id}; e.log.push({on,acct:src,amount:amt,key});}
+      S.paid[key]={on,due:on,source:src,amount:amt,title:`${e.party}・${e.title}`,kind:'ap',ledgerId:e.id,ent:entOf(e)}; e.log.push({on,acct:src,amount:amt,key});}
     ldgAct=null;save();render();
     toast(`${e.party} ${e.type==='ar'?'收款':'付款'} ${money(amt)}${e.remaining>0?`，還剩 ${money(e.remaining)}`:'，已結清'}`);return}
   if(b.dataset.undo){
@@ -1039,6 +1064,8 @@ document.addEventListener('change',e=>{
   if(e.target.dataset&&e.target.dataset.impick!==undefined){const i=Number(e.target.dataset.impick),x=pick(e.target.value); if(x){Object.assign(insManual[i],{bank:x.bank,name:x.name,acct:x.acct});insManual_render();updateInsText()} return}
   if(e.target.dataset&&e.target.dataset.isel){e.target.checked?insSel.add(e.target.dataset.isel):insSel.delete(e.target.dataset.isel);renderIns();return}
   if(e.target.dataset&&e.target.dataset.ipay){const k=e.target.dataset.ipay; if(e.target.value) insPayee[k]=e.target.value; else delete insPayee[k]; renderIns();return}
+  if(e.target.dataset&&e.target.dataset.aent){const a=acctById(e.target.dataset.aent); if(a){a.ent=e.target.value;save();render();toast(`「${a.name}」歸到${entName(a.ent)}`)} return}
+  if(e.target.dataset&&e.target.dataset.ient){const it=S.items.find(i=>i.id===e.target.dataset.ient); if(it){it.ent=e.target.value;save();render();toast(`「${it.title}」歸到${entName(it.ent)}`)} return}
   if(e.target.dataset&&e.target.dataset.prio){const it=S.items.find(i=>i.id===e.target.dataset.prio); if(it){it.prio=Number(e.target.value);save();render();toast(`「${it.title}」改為${PRIO[it.prio].n}`)} return}
   if(e.target.dataset&&e.target.dataset.lprio){const x=(S.ledger||[]).find(i=>i.id===e.target.dataset.lprio); if(x){x.prio=Number(e.target.value);save();render();toast(`「${x.party}・${x.title}」改為${PRIO[x.prio].n}`)} return}
   if(e.target.id==='resN'){S.settings=S.settings||{};S.settings.reserveMonths=Number(e.target.value);save();render();return}
@@ -1056,7 +1083,7 @@ document.getElementById('btnSim').onclick=e=>{const box=document.getElementById(
 window.addEventListener('beforeunload',e=>{if(document.getElementById('sync').textContent==='儲存中…'){e.preventDefault();e.returnValue=''}});
 document.getElementById('acctForm').addEventListener('submit',e=>{
   e.preventDefault();
-  S.accounts.push({id:'a'+uid(),name:aName.value.trim(),type:'bank',no:aNo.value.trim(),balance:Number(aBal.value)||0});
+  S.accounts.push({id:'a'+uid(),name:aName.value.trim(),type:'bank',no:aNo.value.trim(),balance:Number(aBal.value)||0,ent:aEnt.value});
   e.target.reset();save();render();toast('已新增帳戶');
 });
 document.addEventListener('submit',e=>{
@@ -1076,7 +1103,7 @@ document.getElementById('ldgForm').addEventListener('submit',ev=>{
   const amount=Number(lAmt.value), party=lParty.value.trim(), title=lTitle.value.trim();
   if(!party||!title||!(amount>0)) return;
   S.ledger=S.ledger||[];
-  S.ledger.push({id:'l'+uid(),type:lType.value,party,title,amount,remaining:amount,note:lNote.value.trim(),date:lDate.value||'',prio:Number(lPrio.value),created:realToday,log:[]});
+  S.ledger.push({id:'l'+uid(),type:lType.value,ent:lEnt.value,party,title,amount,remaining:amount,note:lNote.value.trim(),date:lDate.value||'',prio:Number(lPrio.value),created:realToday,log:[]});
   lDate.value='';lParty.value='';lTitle.value='';lAmt.value='';lNote.value='';save();render();toast(`已加入${lType.value==='ar'?'應收':'應付'}「${party}・${title}」`);
 });
 document.getElementById('itemForm').addEventListener('submit',e=>{
@@ -1086,13 +1113,13 @@ document.getElementById('itemForm').addEventListener('submit',e=>{
   const payee={bank:fPBank.value.trim(),name:fPName.value.trim(),acct:fPAcct.value.trim()}; rememberPayee(payee);
   if(formKind==='recurring'){
     const day=Math.min(31,Math.max(1,Number(fDay.value)||1));
-    const it={id:'r'+uid(),kind:'recurring',day,title,amount,method,start:realToday,payee,prio:Number(fPrio.value)};
+    const it={id:'r'+uid(),kind:'recurring',day,title,amount,method,start:realToday,payee,prio:Number(fPrio.value),ent:fEnt.value};
     if(fCyc.value==='odd') it.months=ODD.slice(); else if(fCyc.value==='even') it.months=EVEN.slice(); else if(fCyc.value==='y') it.months=[Number(fMon.value)];
     if(fVar.value==='1'){it.variable=true;it.closeDay=Math.min(31,Math.max(1,Number(fClose.value)||1))}
     S.items.push(it);
   }else{
     if(!fDate.value){toast('請選付款日期');return}
-    S.items.push({id:'o'+uid(),kind:'once',date:fDate.value,title,amount,method,payee,prio:Number(fPrio.value)});
+    S.items.push({id:'o'+uid(),kind:'once',date:fDate.value,title,amount,method,payee,prio:Number(fPrio.value),ent:fEnt.value});
   }
   fTitle.value='';fAmt.value='';fPBank.value='';fPName.value='';fPAcct.value='';save();render();toast(`已加入「${title}」`);
 });
@@ -1103,7 +1130,9 @@ render();
 syncMsg('讀取中…');
 load().then(d=>{
   if(d==='error'||d===null) return;   // 讀不到就不允許存，避免用空白蓋掉雲端資料
-  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.settings=S.settings||{reserveMonths:3}; S.items=S.items||[]; S.accounts=S.accounts||[];
+  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.settings=S.settings||{reserveMonths:3};
+  S.entities=(S.entities&&S.entities.length)?S.entities:[{id:'e1',name:'創造共好'}];
+  if(S.settings.scope&&(S.settings.scope==='all'||S.entities.some(e=>e.id===S.settings.scope))) scope=S.settings.scope; S.items=S.items||[]; S.accounts=S.accounts||[];
   _loaded=true; syncMsg('已同步'); render();
 });
 
