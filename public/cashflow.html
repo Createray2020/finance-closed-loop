@@ -425,7 +425,9 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
           <button type="button" data-kind="recurring" aria-pressed="true">常態型（每月固定）</button>
           <button type="button" data-kind="once" aria-pressed="false">臨時新增（一次性）</button>
         </div></div>
-        <div class="fld" id="fDayWrap"><label for="fDay">每月幾號</label><input id="fDay" type="number" min="1" max="31" value="5"></div>
+        <div class="fld" id="fCycWrap"><label for="fCyc">週期</label><select id="fCyc"><option value="m">每月</option><option value="odd">單月（1、3、5、7、9、11 月）</option><option value="even">雙月（2、4、6、8、10、12 月）</option><option value="y">每年</option></select></div>
+        <div class="fld" id="fMonWrap" hidden><label for="fMon">每年幾月</label><select id="fMon">${''}</select></div>
+        <div class="fld" id="fDayWrap"><label for="fDay">幾號</label><input id="fDay" type="number" min="1" max="31" value="5"></div>
         <div class="fld" id="fDateWrap" hidden><label for="fDate">付款日期</label><input id="fDate" type="date"></div>
         <div class="fld"><label for="fTitle">款項事由</label><input id="fTitle" required placeholder="例：房租"></div>
         <div class="fld" id="fVarWrap"><label for="fVar">金額類型</label><select id="fVar"><option value="">每期固定</option><option value="1">每期不同（如信用卡）</option></select></div>
@@ -492,6 +494,15 @@ const realToday=ymd(new Date());
 let refDate=realToday, win='week', formKind='recurring', S, payingKey=null;
 
 // 結帳日：繳款日之前最近一次的結帳日（結帳日 < 繳款日 → 同月，否則上個月）
+// 週期：months 未設＝每月；[1,3,5,7,9,11]＝單月；[2,4,...]＝雙月；單一月份＝每年
+const ODD=[1,3,5,7,9,11], EVEN=[2,4,6,8,10,12];
+function cycleLabel(it){
+  const m=it.months; if(!m||!m.length) return `每月 ${it.day} 號`;
+  if(m.join()===ODD.join()) return `單月 ${it.day} 號`;
+  if(m.join()===EVEN.join()) return `雙月 ${it.day} 號`;
+  if(m.length===1) return `每年 ${m[0]}/${it.day}`;
+  return `${m.join('、')} 月 ${it.day} 號`;
+}
 function closingFor(due,closeDay){
   const d=parse(due); let y=d.getFullYear(), m=d.getMonth();
   if(!(closeDay<d.getDate())){m--; if(m<0){m=11;y--}}
@@ -502,11 +513,11 @@ function occurrences(s,until){
   for(const it of s.items){
     if(it.kind==='once'){ out.push({key:it.id+'|'+it.date,item:it,due:it.date,amount:it.amount}); continue; }
     const st=parse(it.start); let y=st.getFullYear(), m=st.getMonth();
-    for(let guard=0;guard<60;guard++){
+    for(let guard=0;guard<120;guard++){
       const dim=new Date(y,m+1,0).getDate();
       const due=ymd(new Date(y,m,Math.min(it.day,dim)));
       if(due>until) break;
-      if(due>=it.start){
+      if(due>=it.start&&(!it.months||it.months.includes(m+1))){
         const key=it.id+'|'+due, o={key,item:it,due,amount:it.amount};
         if(it.variable){
           o.closing=closingFor(due,it.closeDay);
@@ -649,7 +660,7 @@ function render(){
   if(S.accounts.some(a=>a.id===cur)) sel.value=cur;
   const rec=S.items.filter(i=>i.kind==='recurring').sort((a,b)=>a.day-b.day);
   const once=S.items.filter(i=>i.kind==='once'&&!S.paid[i.id+'|'+i.date]).sort((a,b)=>a.date<b.date?-1:1);
-  set('recTotal','每月 '+money(rec.reduce((t,i)=>t+i.amount,0)));
+  set('recTotal','每月固定 '+money(rec.filter(i=>!i.months).reduce((t,i)=>t+i.amount,0)));
   set('onceTotal',money(once.reduce((t,i)=>t+i.amount,0)));
   const sRow=(i,lbl)=>`<div class="setrow"><span class="num">${lbl}</span><div style="min-width:0"><div>${esc(i.title)}</div><div class="small muted">${esc(methodLabel(i.method))}</div>
     <div class="small ${payeeStr(i.payee)?'muted':''}">${payeeStr(i.payee)?'收款：'+esc(payeeStr(i.payee)):''} <button class="undo" type="button" data-pedit="${i.id}">${payeeStr(i.payee)?'改收款資訊':'加收款資訊'}</button></div></div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}</span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button>${pEdit===i.id?`<div class="payeeedit">
@@ -659,7 +670,7 @@ function render(){
       <div class="fld"><label for="peAcct">收款帳號（可空白）</label><input id="peAcct" value="${esc(i.payee?.acct||'')}"></div>
       <label class="small" style="grid-column:1/-1;display:flex;gap:6px;align-items:center"><input type="checkbox" id="peId" ${i.payee?.idpay?'checked':''}> 臨櫃報身分證字號和姓名繳費（文案列出「身分證字號、姓名」空欄，不需要帳號）</label>
       <div class="btns" style="display:flex;gap:6px"><button class="ghost" type="button" data-pecancel="1">取消</button><button class="primary" type="button" data-pesave="${i.id}">儲存</button></div></div>`:''}</div>`;
-  document.getElementById('recList').innerHTML=rec.map(i=>sRow(i,`每月 ${i.day} 號`+(i.variable?`<div class="small muted">結帳 ${i.closeDay} 號</div>`:''))).join('')||'<div class="empty">尚無</div>';
+  document.getElementById('recList').innerHTML=rec.map(i=>sRow(i,cycleLabel(i)+(i.variable?`<div class="small muted">結帳 ${i.closeDay} 號</div>`:''))).join('')||'<div class="empty">尚無</div>';
   document.getElementById('onceList').innerHTML=once.map(i=>sRow(i,md(i.date))).join('')||'<div class="empty">尚無</div>';
 }
 
@@ -856,7 +867,7 @@ function updateInsText(){
 
 function rowHTML(o,state){
   const it=o.item, late=o.due<refDate;
-  let kind=it.kind==='recurring'?`<span class="chip rec">常態・每月 ${it.day} 號</span>`:it.kind==='ap'?'<span class="chip">應付帳款</span>':'<span class="chip once">臨時</span>';
+  let kind=it.kind==='recurring'?`<span class="chip rec">常態・${cycleLabel(it)}</span>`:it.kind==='ap'?'<span class="chip">應付帳款</span>':'<span class="chip once">臨時</span>';
   if(it.variable&&!o.paid) kind+=o.billed?`<span class="chip">帳單金額已輸入</span><button class="undo" type="button" data-reamt="${o.key}">改金額</button>`
     :o.needInput?`<span class="chip warnchip">${md(o.closing)} 已結帳・待輸入金額</span>`:`<span class="chip">${md(o.closing)} 結帳後輸入金額</span>`;
   const srcName=id=>{const a=acctById(id);return a?(a.type==='cash'?'現金部位':a.name):'已刪除帳戶'};
@@ -911,7 +922,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.hr){setRange(b.dataset.hr);return}
   if(b.dataset.win){win=b.dataset.win;render();return}
   if(b.dataset.kind){formKind=b.dataset.kind;document.querySelectorAll('[data-kind]').forEach(x=>x.setAttribute('aria-pressed',x===b));
-    document.getElementById('fDayWrap').hidden=formKind!=='recurring';fVarWrap.hidden=formKind!=='recurring';syncVar();document.getElementById('fDateWrap').hidden=formKind!=='once';return}
+    document.getElementById('fDayWrap').hidden=formKind!=='recurring';fVarWrap.hidden=formKind!=='recurring';fCycWrap.hidden=formKind!=='recurring';fMonWrap.hidden=formKind!=='recurring'||fCyc.value!=='y';syncVar();document.getElementById('fDateWrap').hidden=formKind!=='once';return}
   if(b.dataset.pay){payingKey=b.dataset.pay;render();return}
   if(b.dataset.paycancel){payingKey=null;render();return}
   if(b.dataset.payok){
@@ -1018,6 +1029,8 @@ document.addEventListener('submit',e=>{
 });
 function syncVar(){const v=formKind==='recurring'&&fVar.value==='1';fCloseWrap.hidden=!v;fAmtLbl.textContent=v?'預估金額':'金額'}
 fVar.addEventListener('change',syncVar);
+fMon.innerHTML=[...Array(12)].map((_,i)=>`<option value="${i+1}">${i+1} 月</option>`).join('');
+fCyc.addEventListener('change',()=>{fMonWrap.hidden=fCyc.value!=='y'});
 document.getElementById('ldgForm').addEventListener('submit',ev=>{
   ev.preventDefault();
   const amount=Number(lAmt.value), party=lParty.value.trim(), title=lTitle.value.trim();
@@ -1034,6 +1047,7 @@ document.getElementById('itemForm').addEventListener('submit',e=>{
   if(formKind==='recurring'){
     const day=Math.min(31,Math.max(1,Number(fDay.value)||1));
     const it={id:'r'+uid(),kind:'recurring',day,title,amount,method,start:realToday,payee};
+    if(fCyc.value==='odd') it.months=ODD.slice(); else if(fCyc.value==='even') it.months=EVEN.slice(); else if(fCyc.value==='y') it.months=[Number(fMon.value)];
     if(fVar.value==='1'){it.variable=true;it.closeDay=Math.min(31,Math.max(1,Number(fClose.value)||1))}
     S.items.push(it);
   }else{
