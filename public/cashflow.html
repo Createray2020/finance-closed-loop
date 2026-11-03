@@ -465,6 +465,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
         <div><div class="subhd"><span>常態型款項</span><span id="recTotal" class="num"></span></div><div id="recList"></div></div>
         <div><div class="subhd"><span>臨時款項（尚未付）</span><span id="onceTotal" class="num"></span></div><div id="onceList"></div></div>
       </div>
+      <details id="skipBox" hidden><summary class="small muted" style="cursor:pointer" id="skipSum"></summary><div id="skipList"></div></details>
       <div class="note">
         <b>規則說明</b>　款項過了付款日當天仍未標記已付，隔天起自動轉入「逾期未付」，並持續算進每個檢視範圍的缺口。
         「每週」＝基準日起 7 天、「每月」＝基準日起 30 天。缺口＝逾期未付＋範圍內應付 − 現有資金。標記已付時，金額會自動從對應帳戶（或現金部位）扣除。
@@ -552,7 +553,9 @@ function occurrences(s,until){
       const due=ymd(new Date(y,m,Math.min(it.day,dim)));
       if(due>until) break;
       if(due>=it.start&&(!it.months||it.months.includes(m+1))){
-        const key=it.id+'|'+due, o={key,item:it,due,amount:it.amount};
+        const key=it.id+'|'+due;
+        if(s.skips&&s.skips[key]){ m++; if(m>11){m=0;y++;} continue; }
+        const o={key,item:it,due,amount:it.amount};
         if(it.variable){
           o.closing=closingFor(due,it.closeDay);
           const v=(s.amounts||{})[key];
@@ -695,7 +698,13 @@ function render(){
   set('remindN',pend.length?`${pend.length} 筆`:'');
   document.getElementById('remindList').innerHTML=pend.map(o=>`<div class="ritem">
     <div class="msg"><b>${esc(o.item.title)}</b> 已經到了結帳日（${md(o.closing)}），請輸入金額。<div class="small muted">${md(o.due)} ${wd(o.due)} 繳款・${esc(methodLabel(o.item.method))}・目前用預估 ${money(o.item.amount)} 計算缺口</div></div>
-    <form data-amtform="${o.key}"><input type="number" min="0" step="1" id="amt-${o.key.replace('|','-')}" placeholder="本期帳單金額" aria-label="${esc(o.item.title)} ${md(o.due)} 帳單金額"><button class="primary" type="submit">確認金額</button></form></div>`).join('');
+    <form data-amtform="${o.key}"><input type="number" min="0" step="1" id="amt-${o.key.replace('|','-')}" placeholder="本期帳單金額" aria-label="${esc(o.item.title)} ${md(o.due)} 帳單金額"><button class="primary" type="submit">確認金額</button></form>
+    <button class="undo" type="button" data-skip="${o.key}" style="justify-self:start">這期不用付（例如帳單 $0）</button></div>`).join('');
+  // 本期免付
+  const sk=Object.entries(S.skips||{}).map(([k,v])=>{const [id,due]=k.split('|');const it=S.items.find(x=>x.id===id);return {k,due,it}})
+    .filter(x=>x.it&&inScope(x.it)).sort((a,b)=>a.due<b.due?-1:1);
+  document.getElementById('skipBox').hidden=!sk.length; set('skipSum',`本期免付 ${sk.length} 筆（可復原）`);
+  document.getElementById('skipList').innerHTML=sk.map(x=>`<div class="llog" style="justify-content:space-between"><span class="num">${md(x.due)}</span><span style="flex:1">${esc(x.it.title)}</span><button class="undo" type="button" data-unskip="${x.k}">復原</button></div>`).join('');
   renderHistory();
   renderLedger();
   renderReserve();
@@ -931,7 +940,7 @@ function rowHTML(o,state){
   const srcName=id=>{const a=acctById(id);return a?(a.type==='cash'?'現金部位':a.name):'已刪除帳戶'};
   const st=o.paid?`<span class="chip">已付 ${md(o.paid.on)}・從${esc(srcName(o.paid.source))}出帳${o.paid.amount!==o.amount?'・實付 '+money(o.paid.amount):''}</span>`:late?`<span class="chip late">逾期 ${diffDays(o.due,refDate)} 天</span>`:state==='today'?'<span class="chip today">今天到期</span>':'';
   const open=!o.paid&&payingKey===o.key;
-  const act=o.ledger?`<button class="pay" type="button" data-lgo="${o.ledger}">去付款</button>`:o.paid?`<button class="undo" type="button" data-undo="${o.key}">取消已付</button>`:open?'':`<button class="pay" type="button" data-pay="${o.key}">標記已付</button>`;
+  const act=o.ledger?`<button class="pay" type="button" data-lgo="${o.ledger}">去付款</button>`:o.paid?`<button class="undo" type="button" data-undo="${o.key}">取消已付</button>`:open?'':`<button class="pay" type="button" data-pay="${o.key}">標記已付</button>${it.kind==='recurring'?`<button class="undo" type="button" data-skip="${o.key}" title="這一期不用付，從清單和缺口移除">本期不用付</button>`:''}`;
   const R=open&&prioOf(o)!==0?reserveCalc():null, rShort=R?R.need-(R.funds-o.amount):0;
   const box=open?`<div class="paybox">${R&&rShort>0?`<div class="reswarn">提醒：這筆不是「絕對」級。付完後資金比預備金（${R.N} 個月內絕對級 ${money(R.need)}）少 ${money(rShort)}，絕對級款項可能會付不出來。還是可以付。</div>`:''}<div class="ttl">從哪裡出帳？預設是款項設定的付款方式，可以改選</div>
     <div class="srcopts">${scopedAccounts().map(a=>{const after=Number(a.balance)-o.amount;return `<label class="srcopt"><input type="radio" name="paysrc" value="${a.id}" ${a.id===it.method?'checked':''}>
@@ -948,7 +957,7 @@ function rowHTML(o,state){
 function set(id,v){document.getElementById(id).textContent=v}
 // 持久化：存到 /api/state（Neon，每位使用者一份）
 const APP='cashflow-v1';
-const emptyState=()=>({app:APP,entities:[{id:'e1',name:'創造共好'}],accounts:[{id:'cash',ent:'e1',name:'現金部位',type:'cash',no:'',balance:0}],items:[],paid:{},amounts:{},ledger:[],payees:[],settings:{reserveMonths:3}});
+const emptyState=()=>({app:APP,entities:[{id:'e1',name:'創造共好'}],accounts:[{id:'cash',ent:'e1',name:'現金部位',type:'cash',no:'',balance:0}],items:[],paid:{},amounts:{},ledger:[],payees:[],skips:{},settings:{reserveMonths:3}});
 let _loaded=false, _saveT=null, _saving=Promise.resolve();
 function syncMsg(t,err){const el=document.getElementById('sync');el.textContent=t;el.classList.toggle('err',!!err)}
 function save(){
@@ -995,6 +1004,8 @@ document.addEventListener('click',e=>{
     if(o.item.variable) S.amounts[o.key]=amt;
     payingKey=null;save();render();toast(`${o.item.title} 已付，${a.type==='cash'?'現金部位':a.name} 扣 ${money(amt)}`);return}
   if(b.dataset.scope){scope=b.dataset.scope;S.settings=S.settings||{};S.settings.scope=scope;save();render();return}
+  if(b.dataset.skip){const k=b.dataset.skip;S.skips=S.skips||{};S.skips[k]={on:realToday};save();render();toast('這一期已標為不用付，可在款項設定復原');return}
+  if(b.dataset.unskip){delete (S.skips||{})[b.dataset.unskip];save();render();toast('已復原，這一期回到待付清單');return}
   if(b.dataset.ins){insMode=b.dataset.ins;renderIns();return}
   if(b.dataset.chan){insChan=b.dataset.chan;renderIns();return}
   if(b.id==='insClear'){insSel.clear();renderIns();return}
@@ -1130,7 +1141,7 @@ render();
 syncMsg('讀取中…');
 load().then(d=>{
   if(d==='error'||d===null) return;   // 讀不到就不允許存，避免用空白蓋掉雲端資料
-  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.settings=S.settings||{reserveMonths:3};
+  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.skips=S.skips||{}; S.settings=S.settings||{reserveMonths:3};
   S.entities=(S.entities&&S.entities.length)?S.entities:[{id:'e1',name:'創造共好'}];
   if(S.settings.scope&&(S.settings.scope==='all'||S.entities.some(e=>e.id===S.settings.scope))) scope=S.settings.scope; S.items=S.items||[]; S.accounts=S.accounts||[];
   _loaded=true; syncMsg('已同步'); render();
