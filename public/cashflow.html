@@ -143,6 +143,7 @@ tr.arrow td{color:var(--muted)}
 .prsel.p1{background:var(--warn-soft);color:var(--warn);border-color:transparent;font-weight:700}
 .prsel.p9{border-style:dashed;opacity:.8}
 .prsel.auto,.chip.auto{background:var(--accent-soft);color:var(--accent);border-color:transparent;font-weight:700}
+.itemnote{overflow-wrap:anywhere;line-height:1.45}
 .asof{border:1px solid var(--line);background:var(--sunk);border-radius:4px;padding:1px 4px;font-size:11px;color:var(--muted);font-family:var(--f-num)}
 .reswarn{background:var(--bad-soft);color:var(--bad);border-radius:6px;padding:8px 10px;font-size:12px;font-weight:500}
 .pblabel{width:100%;border:1px solid var(--line);background:var(--sunk);border-radius:6px;padding:4px 6px;font-size:12px}
@@ -466,6 +467,7 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
         <div class="fld"><label for="fPBank">收款銀行（可空白）</label><input id="fPBank" placeholder="例：國泰世華 中壢分行"></div>
         <div class="fld"><label for="fPName">收款戶名（可空白）</label><input id="fPName" placeholder="例：王小明"></div>
         <div class="fld"><label for="fPAcct">收款帳號（可空白）</label><input id="fPAcct" inputmode="numeric" placeholder="例：699517273949"></div>
+        <div class="fld" style="grid-column:1/-1"><label for="fNote">備註（可空白，例：單號、里程、明細）</label><input id="fNote" placeholder="例：維修單 P11511020001・里程 158,583・換電瓶與機油"></div>
         <div class="fld"><button class="primary" type="submit">加入款項</button></div>
       </form>
       <div class="setlist">
@@ -737,11 +739,12 @@ function render(){
   set('recTotal','每月固定 '+money(rec.filter(i=>!i.months).reduce((t,i)=>t+i.amount,0)));
   set('onceTotal',money(once.reduce((t,i)=>t+i.amount,0)));
   const sRow=(i,lbl)=>`<div class="setrow"><span class="num">${lbl}</span><div style="min-width:0"><div>${esc(i.title)}</div><div style="margin:2px 0;display:flex;gap:4px;flex-wrap:wrap">${prioSel(prioOf(i),`data-prio="${i.id}"`)}${entSel(entOf(i),`data-ient="${i.id}"`)}<select class="prsel${i.auto?' auto':''}" data-iauto="${i.id}" aria-label="扣款方式"><option value="" ${!i.auto?'selected':''}>手動付款</option><option value="1" ${i.auto?'selected':''}>自動扣款</option></select></div><div class="small muted">${esc(methodLabel(i.method))}</div>
-    <div class="small ${payeeStr(i.payee)?'muted':''}">${payeeStr(i.payee)?'收款：'+esc(payeeStr(i.payee)):''} <button class="undo" type="button" data-pedit="${i.id}">${payeeStr(i.payee)?'改收款資訊':'加收款資訊'}</button></div></div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}</span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button>${pEdit===i.id?`<div class="payeeedit">
+    <div class="small ${payeeStr(i.payee)?'muted':''}">${payeeStr(i.payee)?'收款：'+esc(payeeStr(i.payee)):''} <button class="undo" type="button" data-pedit="${i.id}">${payeeStr(i.payee)||i.note?'改收款資訊／備註':'加收款資訊／備註'}</button></div>${i.note?`<div class="small muted itemnote">備註：${esc(i.note)}</div>`:''}</div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}</span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button>${pEdit===i.id?`<div class="payeeedit">
       <div class="fld"><label for="pePick">常用收款帳戶</label><select id="pePick">${payeeOpts()}</select></div>
       <div class="fld"><label for="peBank">收款銀行</label><input id="peBank" value="${esc(i.payee?.bank||'')}"></div>
       <div class="fld"><label for="peName">收款戶名</label><input id="peName" value="${esc(i.payee?.name||'')}"></div>
       <div class="fld"><label for="peAcct">收款帳號（可空白）</label><input id="peAcct" value="${esc(i.payee?.acct||'')}"></div>
+      <div class="fld" style="grid-column:1/-1"><label for="peNote">備註（單號、里程、明細…）</label><input id="peNote" value="${esc(i.note||'')}" placeholder="例：維修單 P11511020001・里程 158,583"></div>
       <label class="small" style="grid-column:1/-1;display:flex;gap:6px;align-items:center"><input type="checkbox" id="peId" ${i.payee?.idpay?'checked':''}> 臨櫃報身分證字號和姓名繳費（文案列出「身分證字號、姓名」空欄，不需要帳號）</label>
       <div class="btns" style="display:flex;gap:6px"><button class="ghost" type="button" data-pecancel="1">取消</button><button class="primary" type="button" data-pesave="${i.id}">儲存</button></div></div>`:''}</div>`;
   document.getElementById('recList').innerHTML=rec.map(i=>sRow(i,cycleLabel(i)+(i.variable?`<div class="small muted">結帳 ${i.closeDay} 號</div>`:''))).join('')||'<div class="empty">尚無</div>';
@@ -766,7 +769,7 @@ function renderHistory(){
   const f=hFrom.value,to=hTo.value,src=sel.value,kind=hKind.value,q=hQ.value.trim();
   const recs=Object.entries(S.paid).map(([key,p])=>{
     const [itemId,due]=key.split('|'); const it=S.items.find(i=>i.id===itemId);
-    return {key,...p,due:p.due||due,title:p.title||(it?it.title:'（已刪除款項）'),kind:p.kind||(it?it.kind:''),planned:it?(it.variable?(S.amounts[key]??null):it.amount):null};
+    return {key,...p,due:p.due||due,title:p.title||(it?it.title:'（已刪除款項）'),note:p.note||(it?it.note:'')||'',kind:p.kind||(it?it.kind:''),planned:it?(it.variable?(S.amounts[key]??null):it.amount):null};
   }).filter(r=>(scope==='all'||(r.ent||entOf(S.items.find(i=>i.id===r.key.split('|')[0])))===scope)).filter(r=>(!f||r.on>=f)&&(!to||r.on<=to)&&(!src||r.source===src)&&(!kind||r.kind===kind)&&(!q||r.title.includes(q)))
     .sort((a,b)=>a.on<b.on?1:a.on>b.on?-1:(a.due<b.due?1:-1));
   const total=recs.reduce((t,r)=>t+r.amount,0), lateN=recs.filter(r=>r.on>r.due).length;
@@ -777,7 +780,7 @@ function renderHistory(){
   let t=`<thead><tr><th>出帳日期</th><th>應付日期</th><th>款項事由</th><th>類型</th><th>出帳來源</th><th class="r">實付金額</th><th></th></tr></thead><tbody>`;
   t+=recs.map(r=>{const late=diffDays(r.due,r.on);
     return `<tr><td class="num">${r.on.replace(/-/g,'/')}</td><td class="num ${late>0?'late-paid':''}">${md(r.due)}${late>0?` <span class="small">晚 ${late} 天</span>`:''}</td>
-    <td>${esc(r.title)}</td><td>${r.kind==='recurring'?'<span class="chip rec">常態</span>':r.kind==='once'?'<span class="chip once">臨時</span>':r.kind==='ap'?'<span class="chip">應付帳款</span>':''}</td>
+    <td>${esc(r.title)}${r.note?`<div class="small muted">${esc(r.note)}</div>`:''}</td><td>${r.kind==='recurring'?'<span class="chip rec">常態</span>':r.kind==='once'?'<span class="chip once">臨時</span>':r.kind==='ap'?'<span class="chip">應付帳款</span>':''}</td>
     <td>${esc(sName(r.source))}</td><td class="r">${money(r.amount)}${r.planned!==null&&r.planned!==r.amount?`<div class="small muted">原 ${money(r.planned)}</div>`:''}</td>
     <td><button class="undo" type="button" data-undo="${r.key}">取消已付</button></td></tr>`}).join('');
   if(!recs.length) t+=`<tr><td colspan="7" class="empty">這個條件下沒有付款紀錄</td></tr>`;
@@ -966,7 +969,7 @@ function rowHTML(o,state){
       <div class="fld"><label for="payOn">出帳日期</label><input id="payOn" type="date" value="${refDate}"></div>
       <div class="btns"><button class="ghost" type="button" data-paycancel="1">取消</button><button class="primary" type="button" data-payok="${o.key}">確認出帳</button></div></div></div>`:'';
   return `<div class="row ${o.paid?'paid':''}"><div class="d">${md(o.due)}<small>${wd(o.due)}</small></div>
-    <div class="t"><b>${esc(it.title)}</b><div class="meta">${o.paid?'':prioSel(prioOf(o),o.ledger?`data-lprio="${o.ledger}"`:`data-prio="${it.id}"`)}${autoChip}${kind}<span class="chip">${o.ledger?'付款時選帳戶':esc(methodLabel(it.method))}</span>${st}</div></div>
+    <div class="t"><b>${esc(it.title)}</b>${it.note?`<div class="small muted itemnote">備註：${esc(it.note)}</div>`:''}<div class="meta">${o.paid?'':prioSel(prioOf(o),o.ledger?`data-lprio="${o.ledger}"`:`data-prio="${it.id}"`)}${autoChip}${kind}<span class="chip">${o.ledger?'付款時選帳戶':esc(methodLabel(it.method))}</span>${st}</div></div>
     <div class="amt">${money(o.amount)}${o.est?'<div class="small muted" style="font-weight:400">預估</div>':''}</div><div class="act">${act}</div>${box}</div>`;
 }
 
@@ -1016,7 +1019,7 @@ document.addEventListener('click',e=>{
     if(!a){toast('請選出帳的帳戶或現金部位');return}
     if(!(amt>0)){toast('實付金額要大於 0');return}
     a.balance=Number(a.balance)-amt;
-    S.paid[o.key]={on,source:src,amount:amt,title:o.item.title,kind:o.item.kind,ent:entOf(o.ledger?(S.ledger||[]).find(x=>x.id===o.ledger):S.items.find(i=>i.id===o.item.id))};
+    S.paid[o.key]={on,source:src,amount:amt,title:o.item.title,note:o.item.note||'',kind:o.item.kind,ent:entOf(o.ledger?(S.ledger||[]).find(x=>x.id===o.ledger):S.items.find(i=>i.id===o.item.id))};
     if(o.item.variable) S.amounts[o.key]=amt;
     payingKey=null;save();render();toast(`${o.item.title} 已付，${a.type==='cash'?'現金部位':a.name} 扣 ${money(amt)}`);return}
   if(b.dataset.scope){scope=b.dataset.scope;S.settings=S.settings||{};S.settings.scope=scope;save();render();return}
@@ -1037,7 +1040,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.pedit){pEdit=b.dataset.pedit;render();return}
   if(b.dataset.pecancel){pEdit=null;render();return}
   if(b.dataset.pesave){const it=S.items.find(i=>i.id===b.dataset.pesave); if(!it) return;
-    it.payee={bank:peBank.value.trim(),name:peName.value.trim(),acct:peAcct.value.trim(),idpay:peId.checked};rememberPayee(it.payee);pEdit=null;save();render();toast('已更新收款資訊');return}
+    it.payee={bank:peBank.value.trim(),name:peName.value.trim(),acct:peAcct.value.trim(),idpay:peId.checked};it.note=peNote.value.trim();rememberPayee(it.payee);pEdit=null;save();render();toast('已更新收款資訊與備註');return}
   if(b.dataset.lgo){ldgAct=b.dataset.lgo;ldgDel=null;render();const r=document.querySelector(`[data-lok="${b.dataset.lgo}"]`);(r||document.getElementById('ledger')).scrollIntoView({block:'center'});return}
   if(b.dataset.ledate){ldgDateEdit=b.dataset.ledate;render();return}
   if(b.dataset.ldcancel){ldgDateEdit=null;render();return}
@@ -1142,15 +1145,15 @@ document.getElementById('itemForm').addEventListener('submit',e=>{
   const payee={bank:fPBank.value.trim(),name:fPName.value.trim(),acct:fPAcct.value.trim()}; rememberPayee(payee);
   if(formKind==='recurring'){
     const day=Math.min(31,Math.max(1,Number(fDay.value)||1));
-    const it={id:'r'+uid(),kind:'recurring',day,title,amount,method,start:realToday,payee,prio:Number(fPrio.value),ent:fEnt.value}; if(fAuto.value==='1') it.auto=true;
+    const it={id:'r'+uid(),kind:'recurring',day,title,amount,method,start:realToday,payee,prio:Number(fPrio.value),ent:fEnt.value,note:fNote.value.trim()}; if(fAuto.value==='1') it.auto=true;
     if(fCyc.value==='odd') it.months=ODD.slice(); else if(fCyc.value==='even') it.months=EVEN.slice(); else if(fCyc.value==='y') it.months=[Number(fMon.value)];
     if(fVar.value==='1'){it.variable=true;it.closeDay=Math.min(31,Math.max(1,Number(fClose.value)||1))}
     S.items.push(it);
   }else{
     if(!fDate.value){toast('請選付款日期');return}
-    S.items.push({id:'o'+uid(),kind:'once',date:fDate.value,title,amount,method,payee,prio:Number(fPrio.value),ent:fEnt.value});
+    S.items.push({id:'o'+uid(),kind:'once',date:fDate.value,title,amount,method,payee,prio:Number(fPrio.value),ent:fEnt.value,note:fNote.value.trim()});
   }
-  fTitle.value='';fAmt.value='';fPBank.value='';fPName.value='';fPAcct.value='';save();render();toast(`已加入「${title}」`);
+  fTitle.value='';fAmt.value='';fPBank.value='';fPName.value='';fPAcct.value='';fNote.value='';save();render();toast(`已加入「${title}」`);
 });
 
 document.getElementById('fDate').value=addDays(realToday,3);
