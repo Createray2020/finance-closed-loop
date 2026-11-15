@@ -739,7 +739,9 @@ function render(){
   set('recTotal','每月固定 '+money(rec.filter(i=>!i.months).reduce((t,i)=>t+i.amount,0)));
   set('onceTotal',money(once.reduce((t,i)=>t+i.amount,0)));
   const sRow=(i,lbl)=>`<div class="setrow"><span class="num">${lbl}</span><div style="min-width:0"><div>${esc(i.title)}</div><div style="margin:2px 0;display:flex;gap:4px;flex-wrap:wrap">${prioSel(prioOf(i),`data-prio="${i.id}"`)}${entSel(entOf(i),`data-ient="${i.id}"`)}<select class="prsel${i.auto?' auto':''}" data-iauto="${i.id}" aria-label="扣款方式"><option value="" ${!i.auto?'selected':''}>手動付款</option><option value="1" ${i.auto?'selected':''}>自動扣款</option></select></div><div class="small muted">${esc(methodLabel(i.method))}</div>
-    <div class="small ${payeeStr(i.payee)?'muted':''}">${payeeStr(i.payee)?'收款：'+esc(payeeStr(i.payee)):''} <button class="undo" type="button" data-pedit="${i.id}">${payeeStr(i.payee)||i.note?'改收款資訊／備註':'加收款資訊／備註'}</button></div>${i.note?`<div class="small muted itemnote">備註：${esc(i.note)}</div>`:''}</div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}</span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button>${pEdit===i.id?`<div class="payeeedit">
+    <div class="small ${payeeStr(i.payee)?'muted':''}">${payeeStr(i.payee)?'收款：'+esc(payeeStr(i.payee)):''} <button class="undo" type="button" data-pedit="${i.id}">${payeeStr(i.payee)||i.note?'改收款資訊／備註':'加收款資訊／備註'}</button></div>${i.note?`<div class="small muted itemnote">備註：${esc(i.note)}</div>`:''}</div><span class="amt">${money(i.amount)}${i.variable?'<div class="small muted">預估</div>':''}<div><button class="undo" type="button" data-amtedit="${i.id}">${i.variable?'改預估':'改金額'}</button></div></span><button class="x" type="button" data-delitem="${i.id}" aria-label="刪除 ${esc(i.title)}">×</button>${aEdit===i.id?`<div class="payeeedit">
+      <div class="fld"><label for="aeAmt">${i.variable?'每期預估金額':(i.kind==='once'?'金額':'每期金額')}（已付的紀錄不受影響）</label><input id="aeAmt" type="number" inputmode="numeric" min="0" step="1" value="${i.amount}"></div>
+      <div class="btns" style="display:flex;gap:6px"><button class="ghost" type="button" data-aecancel="1">取消</button><button class="primary" type="button" data-aesave="${i.id}">儲存</button></div></div>`:''}${pEdit===i.id?`<div class="payeeedit">
       <div class="fld"><label for="pePick">常用收款帳戶</label><select id="pePick">${payeeOpts()}</select></div>
       <div class="fld"><label for="peBank">收款銀行</label><input id="peBank" value="${esc(i.payee?.bank||'')}"></div>
       <div class="fld"><label for="peName">收款戶名</label><input id="peName" value="${esc(i.payee?.name||'')}"></div>
@@ -839,7 +841,7 @@ function renderLedger(){
 }
 
 // 匯款／提款指示
-let insVia='', insChan='counter', insMode='remit', insSel=new Set(), insManual=[], pEdit=null, insPayee={};
+let insVia='', insChan='counter', insMode='remit', insSel=new Set(), insManual=[], pEdit=null, aEdit=null, insPayee={};
 const payeeStr=p=>p?(p.label?p.label+'｜':'')+[p.bank,p.name,p.acct,(!p.acct&&p.idpay)?'臨櫃報身分證繳費':''].filter(Boolean).join('・'):'';
 // 常用收款帳戶：存過的收款資訊，之後可以直接選
 function rememberPayee(p){
@@ -1037,7 +1039,12 @@ document.addEventListener('click',e=>{
   if(b.dataset.imsave){const m=insManual[Number(b.dataset.imsave)]; if(!m||!m.acct){toast('請先填收款帳號');return}
     rememberPayee({bank:m.bank,name:m.name,acct:m.acct});save();renderPayeeBook();insManual_render();toast('已存成常用收款帳戶');return}
   if(b.dataset.pbdel){S.payees=(S.payees||[]).filter(x=>x.id!==b.dataset.pbdel);save();render();toast('已刪除收款帳戶');return}
-  if(b.dataset.pedit){pEdit=b.dataset.pedit;render();return}
+  if(b.dataset.pedit){pEdit=b.dataset.pedit;aEdit=null;render();return}
+  if(b.dataset.amtedit){aEdit=b.dataset.amtedit;pEdit=null;render();const f=document.getElementById('aeAmt');if(f){f.focus();f.select()}return}
+  if(b.dataset.aecancel){aEdit=null;render();return}
+  if(b.dataset.aesave){const it=S.items.find(i=>i.id===b.dataset.aesave); if(!it) return;
+    const raw=document.getElementById('aeAmt').value.trim(); const v=Math.round(Number(raw)); if(raw===''||!Number.isFinite(v)||v<0){toast('請輸入正確的金額');return}
+    const old=it.amount; it.amount=v; aEdit=null; save(); render(); toast('金額已更新：'+money(old)+' → '+money(v)); return}
   if(b.dataset.pecancel){pEdit=null;render();return}
   if(b.dataset.pesave){const it=S.items.find(i=>i.id===b.dataset.pesave); if(!it) return;
     it.payee={bank:peBank.value.trim(),name:peName.value.trim(),acct:peAcct.value.trim(),idpay:peId.checked};it.note=peNote.value.trim();rememberPayee(it.payee);pEdit=null;save();render();toast('已更新收款資訊與備註');return}
