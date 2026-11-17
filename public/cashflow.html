@@ -1006,7 +1006,10 @@ function save(){
 }
 // 套用從雲端讀到的資料（開頁、偵測到別處有更新時共用）
 function applyState(d){
-  applyState(d);
+  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.skips=S.skips||{}; S.settings=S.settings||{reserveMonths:3};
+  S.entities=(S.entities&&S.entities.length)?S.entities:[{id:'e1',name:'創造共好'}];
+  if(S.settings.scope&&(S.settings.scope==='all'||S.entities.some(e=>e.id===S.settings.scope))) scope=S.settings.scope;
+  S.items=S.items||[]; S.accounts=S.accounts||[];
 }
 // 雲端資料比這個分頁新：改用雲端最新資料。conflict=true 表示剛才那次存檔被擋下來了。
 async function pullLatest(conflict){
