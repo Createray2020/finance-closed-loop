@@ -958,10 +958,10 @@ function rowHTML(o,state){
   if(it.variable&&!o.paid) kind+=o.billed?`<span class="chip">帳單金額已輸入</span><button class="undo" type="button" data-reamt="${o.key}">改金額</button>`
     :o.needInput?`<span class="chip warnchip">${md(o.closing)} 已結帳・待輸入金額</span>`:`<span class="chip">${md(o.closing)} 結帳後輸入金額</span>`;
   const srcName=id=>{const a=acctById(id);return a?(a.type==='cash'?'現金部位':a.name):'已刪除帳戶'};
-  const autoChip=o.auto?`<span class="chip auto">自動扣款</span>${!o.paid&&o.due<=refDate?`<span class="chip warnchip">待核對・更新餘額後自動消失</span>`:''}`:'';
+  const autoChip=o.auto?`<span class="chip auto">自動扣款</span>${!o.paid&&o.due<=refDate?`<span class="chip warnchip">待核對・確認已扣或更新餘額後消失</span>`:''}`:'';
   const st=o.paid?`<span class="chip">已付 ${md(o.paid.on)}・從${esc(srcName(o.paid.source))}出帳${o.paid.amount!==o.amount?'・實付 '+money(o.paid.amount):''}</span>`:(late&&!o.auto)?`<span class="chip late">逾期 ${diffDays(o.due,refDate)} 天</span>`:state==='today'?'<span class="chip today">今天到期</span>':'';
   const open=!o.paid&&payingKey===o.key;
-  const act=o.ledger?`<button class="pay" type="button" data-lgo="${o.ledger}">去付款</button>`:o.paid?`<button class="undo" type="button" data-undo="${o.key}">取消已付</button>`:open?'':`${o.auto?`<a class="pay" href="#accounts" style="text-decoration:none">去更新餘額</a>`:`<button class="pay" type="button" data-pay="${o.key}">標記已付</button>`}${it.kind==='recurring'?`<button class="undo" type="button" data-skip="${o.key}" title="這一期不用付，從清單和缺口移除">本期不用付</button>`:''}`;
+  const act=o.ledger?`<button class="pay" type="button" data-lgo="${o.ledger}">去付款</button>`:o.paid?`<button class="undo" type="button" data-undo="${o.key}">取消已付</button>`:open?'':`${o.auto?`<button class="pay" type="button" data-pay="${o.key}" title="銀行已經扣款：從帳戶扣掉這筆並記入付款紀錄">確認已扣</button><a class="undo" href="#accounts" style="text-decoration:underline" title="改成直接輸入銀行最新餘額">更新餘額</a>`:`<button class="pay" type="button" data-pay="${o.key}">標記已付</button>`}${it.kind==='recurring'?`<button class="undo" type="button" data-skip="${o.key}" title="這一期不用付，從清單和缺口移除">本期不用付</button>`:''}`;
   const R=open&&prioOf(o)!==0?reserveCalc():null, rShort=R?R.need-(R.funds-o.amount):0;
   const box=open?`<div class="paybox">${R&&rShort>0?`<div class="reswarn">提醒：這筆不是「絕對」級。付完後資金比預備金（${R.N} 個月內絕對級 ${money(R.need)}）少 ${money(rShort)}，絕對級款項可能會付不出來。還是可以付。</div>`:''}<div class="ttl">從哪裡出帳？預設是款項設定的付款方式，可以改選</div>
     <div class="srcopts">${scopedAccounts().map(a=>{const after=Number(a.balance)-o.amount;return `<label class="srcopt"><input type="radio" name="paysrc" value="${a.id}" ${a.id===it.method?'checked':''}>
@@ -979,25 +979,61 @@ function set(id,v){document.getElementById(id).textContent=v}
 // 持久化：存到 /api/state（Neon，每位使用者一份）
 const APP='cashflow-v1';
 const emptyState=()=>({app:APP,entities:[{id:'e1',name:'創造共好'}],accounts:[{id:'cash',ent:'e1',name:'現金部位',type:'cash',no:'',balance:0}],items:[],paid:{},amounts:{},ledger:[],payees:[],skips:{},settings:{reserveMonths:3}});
-let _loaded=false, _saveT=null, _saving=Promise.resolve();
+let _loaded=false, _saveT=null, _saving=Promise.resolve(), _rev=null, _pending=0, _epoch=0, _dirty=false;
 function syncMsg(t,err){const el=document.getElementById('sync');el.textContent=t;el.classList.toggle('err',!!err)}
 function save(){
   if(!_loaded) return;
   syncMsg('儲存中…');
+  _dirty=true;
   clearTimeout(_saveT);
   _saveT=setTimeout(()=>{
-    const body=JSON.stringify({...S,app:APP});
-    _saving=_saving.then(()=>fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body})
-      .then(r=>{if(!r.ok) throw new Error(r.status); syncMsg('已同步')})
-      .catch(()=>syncMsg('沒存到雲端，請檢查網路後再改一次',true)));
+    _saveT=null;
+    const body=JSON.stringify({...S,app:APP}), ep=_epoch;
+    _pending++;
+    _saving=_saving.then(async()=>{
+      try{
+        if(ep!==_epoch) return;   // 這份是衝突前的舊內容，不送
+        const r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json','x-base-rev':_rev||''},body});
+        if(r.status===409){await pullLatest(true);return}
+        if(!r.ok) throw new Error(r.status);
+        const j=await r.json().catch(()=>({})); if(j&&j.rev) _rev=j.rev;
+        if(!_saveT&&_pending===1) _dirty=false;
+        syncMsg('已同步');
+      }catch(e){syncMsg('沒存到雲端，請檢查網路後再改一次',true)}
+      finally{_pending--}
+    });
   },400);
 }
+// 套用從雲端讀到的資料（開頁、偵測到別處有更新時共用）
+function applyState(d){
+  applyState(d);
+}
+// 雲端資料比這個分頁新：改用雲端最新資料。conflict=true 表示剛才那次存檔被擋下來了。
+async function pullLatest(conflict){
+  const keepScope=scope; _epoch++; clearTimeout(_saveT); _saveT=null; _dirty=false;
+  const d=await load();
+  if(d==='error'||d===null){syncMsg('雲端有較新的資料，請重新整理頁面',true);return}
+  applyState(d); if(keepScope==='all'||S.entities.some(e=>e.id===keepScope)) scope=keepScope;
+  payingKey=null; render(); syncMsg('已同步');
+  toast(conflict?'別的分頁或裝置已更新過資料，已載入最新版本；剛才那一步沒有存入，請再做一次':'已載入別處更新的最新資料');
+}
+// 回到這個分頁時檢查雲端有沒有被別處改過，有就自動換成最新資料
+async function checkRemote(){
+  if(!_loaded||_pending>0||_dirty) return;
+  try{
+    const r=await fetch('/api/state',{cache:'no-store'}); if(!r.ok) return;
+    const j=await r.json(); if(_pending>0||_dirty) return;
+    if(j&&j.rev&&j.rev!==_rev&&j.data&&j.data.app===APP){ _rev=j.rev; const keepScope=scope; applyState(j.data); if(keepScope==='all'||S.entities.some(e=>e.id===keepScope)) scope=keepScope; payingKey=null; render(); toast('已載入別處更新的最新資料'); }
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible') checkRemote()});
+window.addEventListener('focus',checkRemote);
 async function load(){
   try{
     const r=await fetch('/api/state',{cache:'no-store'});
     if(r.status===401){location.href='/sign-in';return null}
     if(!r.ok) throw new Error(r.status);
-    const j=await r.json(); const d=j&&j.data;
+    const j=await r.json(); const d=j&&j.data; _rev=(j&&j.rev)||null;
     if(d&&d.app===APP) return d;
     return emptyState();
   }catch(e){syncMsg('讀取失敗，請重新整理頁面',true);return 'error'}
@@ -1169,9 +1205,7 @@ render();
 syncMsg('讀取中…');
 load().then(d=>{
   if(d==='error'||d===null) return;   // 讀不到就不允許存，避免用空白蓋掉雲端資料
-  S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.skips=S.skips||{}; S.settings=S.settings||{reserveMonths:3};
-  S.entities=(S.entities&&S.entities.length)?S.entities:[{id:'e1',name:'創造共好'}];
-  if(S.settings.scope&&(S.settings.scope==='all'||S.entities.some(e=>e.id===S.settings.scope))) scope=S.settings.scope; S.items=S.items||[]; S.accounts=S.accounts||[];
+  applyState(d);
   _loaded=true; syncMsg('已同步'); render();
 });
 
