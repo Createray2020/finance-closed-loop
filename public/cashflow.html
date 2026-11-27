@@ -107,6 +107,8 @@ header.top{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-bet
 .hfilters .fld{width:150px}
 .hfilters .fld:last-child{width:180px}
 .hstats{display:flex;flex-wrap:wrap;gap:8px}
+.xrow{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line)}
+.xrow .amt{font-family:var(--f-num);font-weight:600}
 .hstat{background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--muted)}
 .hstat b{color:var(--ink);font-family:var(--f-num);font-weight:600;margin-left:4px}
 td.late-paid{color:var(--warn)}
@@ -367,6 +369,23 @@ form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap
               <div class="fld"><button class="primary" type="submit">新增帳戶</button></div>
             </form>
           </details>
+        </div>
+      </section>
+      <section class="panel" id="xfer" style="margin-top:16px">
+        <div class="hd"><h2>帳戶互轉</h2><span class="small muted">兩邊餘額同時一減一加；不算支出、不進付款紀錄</span></div>
+        <div class="bd" style="display:grid;gap:12px">
+          <form class="f" id="xferForm">
+            <div class="fld"><label for="xFrom">轉出帳戶</label><select id="xFrom" required></select></div>
+            <div class="fld"><label for="xTo">轉入帳戶</label><select id="xTo" required></select></div>
+            <div class="fld"><label for="xAmt">金額</label><input id="xAmt" type="number" min="1" step="1" required></div>
+            <div class="fld"><label for="xOn">轉帳日期</label><input id="xOn" type="date" required></div>
+            <div class="fld"><label for="xNature">性質</label><select id="xNature"><option value="">一般互轉</option><option value="sh">股東往來</option></select></div>
+            <div class="fld"><label for="xNote">備註（可空白）</label><input id="xNote" placeholder="例：支應食材貨款"></div>
+            <div class="fld"><button class="primary" type="submit">確認互轉</button></div>
+          </form>
+          <div class="small muted" id="xHint"></div>
+          <div class="hstats" id="xStats"></div>
+          <div><div class="subhd"><span>互轉紀錄</span><span id="xSum" class="num"></span></div><div id="xList"></div></div>
         </div>
       </section>
 </div>
@@ -1011,7 +1030,7 @@ function applyState(d){
   S=d; S.paid=S.paid||{}; S.amounts=S.amounts||{}; S.ledger=S.ledger||[]; S.payees=S.payees||[]; S.skips=S.skips||{}; S.settings=S.settings||{reserveMonths:3};
   S.entities=(S.entities&&S.entities.length)?S.entities:[{id:'e1',name:'創造共好'}];
   if(S.settings.scope&&(S.settings.scope==='all'||S.entities.some(e=>e.id===S.settings.scope))) scope=S.settings.scope;
-  S.items=S.items||[]; S.accounts=S.accounts||[];
+  S.items=S.items||[]; S.accounts=S.accounts||[]; S.transfers=S.transfers||[];
 }
 // 雲端資料比這個分頁新：改用雲端最新資料。conflict=true 表示剛才那次存檔被擋下來了。
 async function pullLatest(conflict){
@@ -1234,7 +1253,60 @@ function navBadges(){
   set('bFlow',document.getElementById('sGap').textContent.replace(/（.*）/,''));
   set('bAcct',S.accounts.length); set('navSync',document.getElementById('sync').textContent);
 }
-const _render=render; render=function(){_render();navBadges();};
+// ---- 帳戶互轉 ----
+let xUndo=null, xNatureTouched=false;
+const xAcctName=id=>{const a=acctById(id);return a?(a.type==='cash'?'現金部位':a.name+(a.no?' ****'+a.no:'')):'已刪除帳戶'};
+function xAutoNature(){
+  const f=acctById(xFrom.value), t=acctById(xTo.value), cross=!!(f&&t&&entOf(f)!==entOf(t));
+  if(!xNatureTouched) xNature.value=cross?'sh':'';
+  set('xHint',f&&t&&f.id===t.id?'轉出和轉入不能是同一個帳戶':cross?`跨帳本：${entName(entOf(f))} → ${entName(entOf(t))}，性質預設「股東往來」`:'');
+}
+function renderTransfers(){
+  const opt=a=>`<option value="${a.id}">${esc(entName(entOf(a)))}｜${esc(xAcctName(a.id))}（${money(a.balance)}）</option>`;
+  const cf=xFrom.value, ct=xTo.value, ids=S.accounts.map(a=>a.id);
+  xFrom.innerHTML=S.accounts.map(opt).join(''); xTo.innerHTML=xFrom.innerHTML;
+  xFrom.value=ids.includes(cf)?cf:(ids[0]||''); xTo.value=ids.includes(ct)?ct:(ids.find(i=>i!==xFrom.value)||'');
+  if(!xOn.value) xOn.value=realToday;
+  xAutoNature();
+  const T=(S.transfers||[]).filter(t=>scope==='all'||t.fromEnt===scope||t.toEnt===scope).sort((a,b)=>a.on<b.on?1:a.on>b.on?-1:0);
+  // 股東往來累計：依帳本配對算淨額
+  const net={}; T.filter(t=>t.nature==='sh'&&t.fromEnt!==t.toEnt).forEach(t=>{const fwd=t.fromEnt<t.toEnt, k=fwd?t.fromEnt+'|'+t.toEnt:t.toEnt+'|'+t.fromEnt; net[k]=(net[k]||0)+(fwd?1:-1)*t.amount});
+  xStats.innerHTML=Object.entries(net).filter(([,v])=>v).map(([k,v])=>{const [a,b]=k.split('|');const [f,t]=v>0?[a,b]:[b,a];
+    return `<span class="hstat">股東往來累計　${esc(entName(f))} → ${esc(entName(t))}<b>${money(Math.abs(v))}</b></span>`}).join('');
+  set('xSum',T.length?`${T.length} 筆`:'');
+  xList.innerHTML=T.map(t=>`<div class="xrow"><div style="min-width:0"><span class="num">${t.on.replace(/-/g,'/')}</span>　<b>${esc(xAcctName(t.from))}</b> → <b>${esc(xAcctName(t.to))}</b>
+      ${t.nature==='sh'?'<span class="chip rec">股東往來</span>':''}${t.fromEnt!==t.toEnt?`<div class="small muted">${esc(entName(t.fromEnt))} → ${esc(entName(t.toEnt))}${t.note?'・'+esc(t.note):''}</div>`:(t.note?`<div class="small muted">${esc(t.note)}</div>`:'')}</div>
+    <div><span class="amt">${money(t.amount)}</span> ${xUndo===t.id
+      ?`<button class="undo" type="button" data-xundo="${t.id}" style="color:var(--bad);font-weight:700">確定取消，兩邊餘額還原</button><button class="undo" type="button" data-xundono="1">不取消</button>`
+      :`<button class="undo" type="button" data-xundo="${t.id}">取消互轉</button>`}</div></div>`).join('')||'<div class="empty">還沒有互轉紀錄</div>';
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.xundono){xUndo=null;render();return}
+  if(b.dataset.xundo){const id=b.dataset.xundo;
+    if(xUndo!==id){xUndo=id;render();return}
+    const t=(S.transfers||[]).find(x=>x.id===id); xUndo=null; if(!t){render();return}
+    const f=acctById(t.from), to=acctById(t.to);
+    if(f) f.balance=Number(f.balance)+t.amount; if(to) to.balance=Number(to.balance)-t.amount;
+    S.transfers=S.transfers.filter(x=>x.id!==id); save(); render(); toast(`已取消互轉，兩邊餘額還原 ${money(t.amount)}`);}
+});
+document.addEventListener('change',e=>{
+  if(e.target.id==='xNature'){xNatureTouched=true;return}
+  if(e.target.id==='xFrom'||e.target.id==='xTo'){xNatureTouched=false;xAutoNature()}
+});
+document.getElementById('xferForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const f=acctById(xFrom.value), t=acctById(xTo.value), amt=Math.round(Number(xAmt.value)), on=xOn.value||realToday;
+  if(!f||!t){toast('請選轉出與轉入帳戶');return}
+  if(f.id===t.id){toast('轉出和轉入不能是同一個帳戶');return}
+  if(!(amt>0)){toast('金額要大於 0');return}
+  f.balance=Number(f.balance)-amt; t.balance=Number(t.balance)+amt;
+  S.transfers=S.transfers||[];
+  S.transfers.push({id:'x'+uid(),on,from:f.id,to:t.id,fromEnt:entOf(f),toEnt:entOf(t),amount:amt,nature:xNature.value,note:xNote.value.trim(),created:realToday});
+  xAmt.value='';xNote.value='';xNatureTouched=false;save();render();
+  toast(`已互轉 ${money(amt)}：${xAcctName(f.id)} → ${xAcctName(t.id)}`);
+});
+const _render=render; render=function(){_render();renderTransfers();navBadges();};
 document.querySelectorAll('.band>div').forEach((d,i)=>{const to=['accounts','overview',null,'flow'][i]; if(to){d.dataset.go=to;d.addEventListener('click',()=>{location.hash=to})}});
 showView();
 </script>
